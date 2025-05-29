@@ -1,5 +1,5 @@
 const bcrypt = require('bcrypt');
-const connectDB = require('../db/db');
+const connectDB = require('../config/db');
 
 exports.registerUser = async (req, res) => {
   try {
@@ -16,12 +16,12 @@ exports.registerUser = async (req, res) => {
     } = req.body;
 
     // Validación básica
-    if (!DNI || !nombres || !apellido || !email || !username || !telefono || !contrasena || !rol_id) {
+    if (!DNI || !nombres || !apellido || !email || !username || !telefono || !contrasena || !rol_id || !id_especialidad) {
       return res.status(400).json({ error: 'Faltan datos obligatorios' });
     }
 
     // Validar especialidad si es médico
-    if (rol_id === 2 && !id_especialidad) {
+    if (rol_id === 1 && !id_especialidad) {
       return res.status(400).json({ error: 'Falta id_especialidad para registrar un médico' });
     }
 
@@ -86,7 +86,6 @@ exports.loginUser = async (req, res) => {
         email: user.email,
         telefono: user.telefono,
         rol_id: user.id_rol
-        // podés devolver más datos si querés
       }
     });
   } catch (error) {
