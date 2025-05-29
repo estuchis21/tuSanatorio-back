@@ -1,6 +1,8 @@
 const bcrypt = require('bcrypt');
 const connectDB = require('../config/db');
+const sql = require('mssql');
 
+// REGISTRO DE USUARIO
 exports.registerUser = async (req, res) => {
   try {
     const {
@@ -11,45 +13,47 @@ exports.registerUser = async (req, res) => {
       username,
       telefono,
       contrasena,
-      rol_id,
-      id_especialidad
+      id_rol,
+      id_especialidad = null // puede ser null por defecto
     } = req.body;
 
-    // Validación básica
-    if (!DNI || !nombres || !apellido || !email || !username || !telefono || !contrasena || !rol_id || !id_especialidad) {
-      return res.status(400).json({ error: 'Faltan datos obligatorios' });
+    // Validación obligatoria
+    if (!DNI || !nombres || !apellido || !email || !username || !telefono || !contrasena || !id_rol) {
+      return res.status(400).json({ error: 'Faltan campos obligatorios' });
     }
 
-    // Validar especialidad si es médico
-    if (rol_id === 1 && !id_especialidad) {
+    // Validar especialidad si el usuario es médico
+    if (id_rol === 2 && !id_especialidad) {
       return res.status(400).json({ error: 'Falta id_especialidad para registrar un médico' });
     }
 
     const pool = await connectDB();
 
-    // Hashear la contraseña
+    // Hashear la contraseña antes de guardarla
     const hashedPassword = await bcrypt.hash(contrasena, 10);
 
-    // Llamar al procedimiento almacenado
+    // Insertar el usuario usando un procedimiento almacenado
     await pool.request()
-      .input('DNI', DNI)
-      .input('nombres', nombres)
-      .input('apellido', apellido)
-      .input('email', email)
-      .input('username', username)
-      .input('telefono', telefono)
-      .input('contrasena', hashedPassword)
-      .input('rol_id', rol_id)
-      .input('id_especialidad', id_especialidad || null)
+      .input('DNI', sql.BigInt, DNI)
+      .input('nombres', sql.VarChar, nombres)
+      .input('apellido', sql.VarChar, apellido)
+      .input('email', sql.VarChar, email)
+      .input('username', sql.VarChar, username)
+      .input('telefono', sql.VarChar, telefono)
+      .input('contrasena', sql.VarChar, hashedPassword)
+      .input('id_rol', sql.Int, id_rol)
+      .input('id_especialidad', sql.Int, id_especialidad)
       .execute('insertarUsuario');
 
     res.status(200).json({ message: 'Usuario registrado correctamente' });
+
   } catch (error) {
     console.error('Error en registerUser:', error);
     res.status(500).json({ error: 'Error al registrar el usuario' });
   }
 };
 
+// LOGIN DE USUARIO
 exports.loginUser = async (req, res) => {
   try {
     const { username, contrasena } = req.body;
@@ -59,9 +63,10 @@ exports.loginUser = async (req, res) => {
     }
 
     const pool = await connectDB();
+
     const result = await pool
       .request()
-      .input('username', username)
+      .input('username', sql.VarChar, username)
       .execute('getUserByUsername');
 
     const user = result.recordset[0];
@@ -70,13 +75,18 @@ exports.loginUser = async (req, res) => {
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
 
-    const isMatch = await bcrypt.compare(contrasena, user.contrasena);
+    // La contraseña en la base de datos debe estar hasheada
+    const hashedPassword = user.contrasena;
+
+    // Comparar la contraseña ingresada con el hash almacenado
+    const isMatch = await bcrypt.compare(contrasena, hashedPassword);
 
     if (!isMatch) {
       return res.status(401).json({ error: 'Contraseña incorrecta' });
     }
 
-    res.status(200).json({
+    // Login exitoso
+    return res.status(200).json({
       message: 'Login exitoso',
       usuario: {
         id_usuario: user.id_usuario,
@@ -85,11 +95,12 @@ exports.loginUser = async (req, res) => {
         apellido: user.apellido,
         email: user.email,
         telefono: user.telefono,
-        rol_id: user.id_rol
+        id_rol: user.id_rol
       }
     });
+
   } catch (error) {
     console.error('Error al loguear:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+    return res.status(500).json({ error: 'Error interno del servidor' });
   }
 };
