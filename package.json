@@ -1,0 +1,27 @@
+{
+  "name": "tusanatorio-back",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/estuchis21/tuSanatorio-back.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/estuchis21/tuSanatorio-back/issues"
+  },
+  "homepage": "https://github.com/estuchis21/tuSanatorio-back#readme",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "mssql": "^11.0.1"
+  }
+}
