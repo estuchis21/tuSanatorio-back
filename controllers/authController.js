@@ -14,25 +14,35 @@ exports.registerUser = async (req, res) => {
       telefono,
       contrasena,
       id_rol,
-      id_especialidad = null // puede ser null por defecto
+      id_especialidad = null
     } = req.body;
 
-    // Validación obligatoria
     if (!DNI || !nombres || !apellido || !email || !username || !telefono || !contrasena || !id_rol) {
       return res.status(400).json({ error: 'Faltan campos obligatorios' });
     }
 
-    // Validar especialidad si el usuario es médico
-    if (id_rol === 2 && !id_especialidad) {
-      return res.status(400).json({ error: 'Falta id_especialidad para registrar un médico' });
-    }
-
     const pool = await connectDB();
 
-    // Hashear la contraseña antes de guardarla
-    const hashedPassword = await bcrypt.hash(contrasena, 10);
+    // Verificar duplicados
+    const check = await pool.request()
+      .input('DNI', sql.BigInt, DNI)
+      .input('email', sql.VarChar, email)
+      .input('username', sql.VarChar, username)
+      .query(`SELECT * FROM Usuarios WHERE DNI = @DNI OR email = @email OR username = @username`);
 
-    // Insertar el usuario usando un procedimiento almacenado
+    if (check.recordset.length > 0) {
+      const existente = check.recordset[0];
+      if (existente.DNI === DNI) return res.status(409).json({ error: 'DNI ya registrado' });
+      if (existente.email === email) return res.status(409).json({ error: 'Email ya registrado' });
+      if (existente.username === username) return res.status(409).json({ error: 'Username ya registrado' });
+    }
+
+    if (id_rol === 2 && !id_especialidad) {
+      return res.status(400).json({ error: 'Falta id_especialidad para médicos' });
+    }
+
+    const hashedPassword = await bcrypt.hash(contrasena);
+
     await pool.request()
       .input('DNI', sql.BigInt, DNI)
       .input('nombres', sql.VarChar, nombres)
@@ -45,7 +55,7 @@ exports.registerUser = async (req, res) => {
       .input('id_especialidad', sql.Int, id_especialidad)
       .execute('insertarUsuario');
 
-    res.status(200).json({ message: 'Usuario registrado correctamente' });
+    res.status(201).json({ message: 'Usuario registrado correctamente' });
 
   } catch (error) {
     console.error('Error en registerUser:', error);
@@ -53,13 +63,15 @@ exports.registerUser = async (req, res) => {
   }
 };
 
-// LOGIN DE USUARIO
+
+
+// LOGIN SIMPLE
 exports.loginUser = async (req, res) => {
   try {
     const { username, contrasena } = req.body;
 
     if (!username || !contrasena) {
-      return res.status(400).json({ error: 'Faltan datos obligatorios' });
+      return res.status(400).json({ error: 'Faltan datos' });
     }
 
     const pool = await connectDB();
@@ -71,36 +83,17 @@ exports.loginUser = async (req, res) => {
 
     const user = result.recordset[0];
 
-    if (!user) {
-      return res.status(404).json({ error: 'Usuario no encontrado' });
-    }
-
-    // La contraseña en la base de datos debe estar hasheada
     const hashedPassword = user.contrasena;
+    console.log(hashedPassword);
 
-    // Comparar la contraseña ingresada con el hash almacenado
-    const isMatch = await bcrypt.compare(contrasena, hashedPassword);
+    const compare = await bcrypt.compare(contrasena, hashedPassword);
 
-    if (!isMatch) {
-      return res.status(401).json({ error: 'Contraseña incorrecta' });
+    if(!compare){
+      res.status(401).json({error: 'No hay contraseña comparable'});
     }
-
-    // Login exitoso
-    return res.status(200).json({
-      message: 'Login exitoso',
-      usuario: {
-        id_usuario: user.id_usuario,
-        username: user.username,
-        nombres: user.nombres,
-        apellido: user.apellido,
-        email: user.email,
-        telefono: user.telefono,
-        id_rol: user.id_rol
-      }
-    });
 
   } catch (error) {
-    console.error('Error al loguear:', error);
-    return res.status(500).json({ error: 'Error interno del servidor' });
+    console.error('Error en loginUser:', error);
+    res.status(500).json({ error: 'Error al iniciar sesión' });
   }
 };
