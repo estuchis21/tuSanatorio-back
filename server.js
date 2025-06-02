@@ -3,6 +3,8 @@ const app = express();
 const cors = require('cors');
 app.use(cors());
 
+app.use(express.json());
+
 const turnosRoutes = require('./routes/turnosRoutes');
 app.use('/turnos', turnosRoutes);
 
