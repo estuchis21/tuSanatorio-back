@@ -1,4 +1,4 @@
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const connectDB = require('../config/db');
 const sql = require('mssql');
 
@@ -65,7 +65,6 @@ exports.registerUser = async (req, res) => {
 
 
 
-// LOGIN SIMPLE
 exports.loginUser = async (req, res) => {
   try {
     const { username, contrasena } = req.body;
@@ -73,6 +72,8 @@ exports.loginUser = async (req, res) => {
     if (!username || !contrasena) {
       return res.status(400).json({ error: 'Faltan datos' });
     }
+
+    console.log(username, contrasena);
 
     const pool = await connectDB();
 
@@ -83,14 +84,22 @@ exports.loginUser = async (req, res) => {
 
     const user = result.recordset[0];
 
-    const hashedPassword = user.contrasena;
-    console.log(hashedPassword);
+        const hashedPassword = user.contrasena;
 
     const compare = await bcrypt.compare(contrasena, hashedPassword);
-
-    if(!compare){
-      res.status(401).json({error: 'No hay contraseña comparable'});
+    if (!compare) {
+     return res.status(401).json({ error: 'No coinciden las contraseñas' });
     }
+
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+
+    // Podés evitar devolver toda la información del usuario
+    // por ejemplo, eliminando el campo `contrasena` antes de enviarlo
+
+    res.status(200).json(user);
 
   } catch (error) {
     console.error('Error en loginUser:', error);
