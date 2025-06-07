@@ -1,7 +1,6 @@
 const connectDB = require('../config/db');
 const sql = require('mssql');
 
-
 exports.asignarTurno = async (req, res) => {
   try {
     const { id_paciente, id_turno, id_obra_social } = req.body;
@@ -26,46 +25,39 @@ exports.asignarTurno = async (req, res) => {
 
     const pool = await connectDB();
 
-    // Verificar si paciente existe
-    const pacienteCheck = await pool.request()
-      .input('id_paciente', sql.Int, id_paciente)
-      .query('SELECT 1 FROM pacientes WHERE id_paciente = @id_paciente');
+    // Verificar si el turno ya fue asignado
+    const turnoAsignado = await pool.request()
+      .input('id_turno', sql.Int, id_turno)
+      .query('SELECT * FROM Turnos_asignados WHERE id_turno = @id_turno');
 
-    if (pacienteCheck.recordset.length === 0) {
-      return res.status(404).json({ error: 'Paciente no encontrado' });
-    }
-
-    // Verificar si obra social existe
-    const obraCheck = await pool.request()
-      .input('id_obra_social', sql.Int, id_obra_social)
-      .query('SELECT 1 FROM Obras_sociales WHERE id_obra_social = @id_obra_social');
-
-    if (obraCheck.recordset.length === 0) {
-      return res.status(404).json({ error: 'Obra social no encontrada' });
+    if (turnoAsignado.recordset.length > 0) {
+      return res.status(409).json({ error: 'El turno ya está asignado' });
     }
 
     // Verificar si el turno está disponible
-    const turnoCheck = await pool.request()
+    const turnoDisponible = await pool.request()
       .input('id_turno', sql.Int, id_turno)
-      .query('SELECT 1 FROM Turnos_disponibles WHERE id_turno = @id_turno');
+      .query('SELECT * FROM Turnos_disponibles WHERE id_turno = @id_turno');
 
-    if (turnoCheck.recordset.length === 0) {
-      return res.status(400).json({ error: 'Turno no disponible o ya asignado' });
+    if (turnoDisponible.recordset.length === 0) {
+      return res.status(409).json({ error: 'El turno no está disponible' });
     }
 
-    // Ejecutar stored procedure para asignar turno
-    await pool.request()
+    // Ejecutar el stored procedure
+    const turno = await pool.request()
       .input('id_turno', sql.Int, id_turno)
       .input('id_paciente', sql.Int, id_paciente)
       .input('id_obra_social', sql.Int, id_obra_social)
       .execute('AsignarTurno');
 
-    return res.status(200).json({ message: 'Turno asignado correctamente' });
+    return res.status(200).json({ message: 'Turno asignado correctamente'});
 
   } catch (error) {
-    return res.status(500).json({ error: 'Error interno al asignar turno' });
+    console.error('Error al asignar turno:', error);
+    return res.status(500).json({ error: 'Error del servidor al asignar turno' });
   }
 };
+
 
 exports.getTurnos = async (req, res) => {
   // Lógica para obtener los turnos del usuario actual
