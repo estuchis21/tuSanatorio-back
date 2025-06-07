@@ -44,13 +44,13 @@ exports.asignarTurno = async (req, res) => {
     }
 
     // Ejecutar el stored procedure
-    await pool.request()
+    const turno = await pool.request()
       .input('id_turno', sql.Int, id_turno)
       .input('id_paciente', sql.Int, id_paciente)
       .input('id_obra_social', sql.Int, id_obra_social)
       .execute('AsignarTurno');
 
-    return res.status(200).json({ message: 'Turno asignado correctamente' });
+    return res.status(200).json({ message: 'Turno asignado correctamente'});
 
   } catch (error) {
     console.error('Error al asignar turno:', error);
