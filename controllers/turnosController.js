@@ -71,22 +71,45 @@ exports.historialTurnosMed = async (req, res) => {
   // Lógica para obtener el historial de turnos de un médico
 };
 
-
 exports.deleteTurno = async (req, res) => {
-  const { id_paciente, id_turno } = req.body;
+  const { id_paciente, id_turno_asignado } = req.body;
+
+  if (!id_paciente || !id_turno_asignado) {
+    return res.status(409).json({ error: 'Faltan datos' });
+  }
 
   try {
     const pool = await connectDB();
 
-    const request = await pool.request();
-    request.input('id_paciente', sql.Int, id_paciente);
-    request.input('id_turno', sql.Int, id_turno);
-    request.execute('CancelarTurno');
+    // Verificar existencia del turno asignado
+    const idTurnoCheck = await pool.request()
+      .input('id_turno_asignado', sql.Int, id_turno_asignado)
+      .query('SELECT * FROM Turnos_asignados WHERE id_turno_asignado = @id_turno_asignado');
 
-    res.status(200).send('Se ejecutó el procedimiento almacenado CancelarTurno.');
+    if (idTurnoCheck.recordset.length === 0) {
+      return res.status(404).json({ error: 'No existe ese turno asignado' });
+    }
+
+    // Verificar existencia del paciente con ese turno
+    const idPacienteCheck = await pool.request()
+      .input('id_paciente', sql.Int, id_paciente)
+      .input('id_turno_asignado', sql.Int, id_turno_asignado)
+      .query('SELECT * FROM Turnos_asignados WHERE id_paciente = @id_paciente AND id_turno_asignado = @id_turno_asignado');
+
+    if (idPacienteCheck.recordset.length === 0) {
+      return res.status(404).json({ error: 'El turno no está asignado a ese paciente' });
+    }
+
+    // Ejecutar SP
+    await pool.request()
+      .input('id_paciente', sql.Int, id_paciente)
+      .input('id_turno_asignado', sql.Int, id_turno_asignado)
+      .execute('CancelarTurno');
+
+    res.status(200).json({ message: 'Turno cancelado exitosamente' });
 
   } catch (err) {
     console.error('Error al ejecutar el SP:', err);
-    res.status(500).send('Error al cancelar el turno.');
+    res.status(500).json({ error: 'Error al cancelar el turno.' });
   }
 };
