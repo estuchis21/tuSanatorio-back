@@ -86,12 +86,16 @@ exports.loginUser = async (req, res) => {
     const hashedPassword = user.contrasena;
     console.log(hashedPassword);
 
-    const compare = await bcrypt.compare(contrasena, hashedPassword);
+    if(contrasena != user.contrasena){
+      res.status(401).json({error: 'Las contraseñas no coinciden'})
+    }
 
+    const compare = await bcrypt.compare(contrasena, hashedPassword);
     if(!compare){
       res.status(401).json({error: 'No hay contraseña comparable'});
     }
 
+    res.status(200).json({user});
   } catch (error) {
     console.error('Error en loginUser:', error);
     res.status(500).json({ error: 'Error al iniciar sesión' });
