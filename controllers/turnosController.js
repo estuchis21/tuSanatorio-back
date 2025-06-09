@@ -63,9 +63,39 @@ exports.getTurnos = async (req, res) => {
   // Lógica para obtener los turnos del usuario actual
 };
 
+
 exports.historialTurnosPac = async (req, res) => {
-  // Lógica para obtener el historial de turnos de un paciente
+  const { id_paciente } = req.params;
+
+  if (!id_paciente) {
+    return res.status(400).json({ error: 'ID de paciente no proporcionado' });
+  }
+
+  try {
+    const pool = await connectDB();
+
+    // Verificar si el paciente tiene turnos asignados
+    const checkResult = await pool.request()
+      .input('id_paciente', sql.Int, id_paciente)
+      .query('SELECT * FROM Turnos_asignados WHERE id_paciente = @id_paciente');
+
+    if (checkResult.recordset.length === 0) {
+      return res.status(404).json({ error: 'No existe el paciente en la tabla de turnos asignados' });
+    }
+
+    // Llamar al stored procedure HistorialTurnos
+    const result = await pool.request()
+      .input('id_paciente', sql.Int, id_paciente)
+      .execute('HistorialTurnos');
+
+    return res.status(200).json({ historial: result.recordset });
+
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Error al obtener el historial de turnos del paciente' });
+  }
 };
+
 
 exports.historialTurnosMed = async (req, res) => {
   // Lógica para obtener el historial de turnos de un médico
