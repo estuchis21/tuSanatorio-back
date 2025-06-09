@@ -63,30 +63,108 @@ exports.getTurnos = async (req, res) => {
   // Lógica para obtener los turnos del usuario actual
 };
 
+
 exports.historialTurnosPac = async (req, res) => {
-  // Lógica para obtener el historial de turnos de un paciente
-};
+  const { id_paciente } = req.params;
 
-exports.historialTurnosMed = async (req, res) => {
-  // Lógica para obtener el historial de turnos de un médico
-};
-
-
-exports.deleteTurno = async (req, res) => {
-  const { id_paciente, id_turno } = req.body;
+  if (!id_paciente) {
+    return res.status(400).json({ error: 'ID de paciente no proporcionado' });
+  }
 
   try {
     const pool = await connectDB();
 
-    const request = await pool.request();
-    request.input('id_paciente', sql.Int, id_paciente);
-    request.input('id_turno', sql.Int, id_turno);
-    request.execute('CancelarTurno');
+    // Verificar si el paciente tiene turnos asignados
+    const checkResult = await pool.request()
+      .input('id_paciente', sql.Int, id_paciente)
+      .query('SELECT * FROM Turnos_asignados WHERE id_paciente = @id_paciente');
 
-    res.status(200).send('Se ejecutó el procedimiento almacenado CancelarTurno.');
+    if (checkResult.recordset.length === 0) {
+      return res.status(404).json({ error: 'No existe el paciente en la tabla de turnos asignados' });
+    }
+
+    // Llamar al stored procedure HistorialTurnos
+    const result = await pool.request()
+      .input('id_paciente', sql.Int, id_paciente)
+      .execute('HistorialTurnos');
+
+    return res.status(200).json({ historial: result.recordset });
+
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Error al obtener el historial de turnos del paciente' });
+  }
+};
+
+
+exports.historialTurnosMed = async (req, res) => {
+  const { id_medico } = req.params;
+
+  // Validar que id_medico sea un número válido
+  const id = parseInt(id_medico, 10);
+  if (isNaN(id)) {
+    return res.status(400).json({ error: 'ID de médico inválido' });
+  }
+
+  try {
+    const pool = await connectDB();
+
+    // Ejecutar el stored procedure
+    const result = await pool.request()
+      .input('id_medico', sql.Int, id)
+      .execute('HistorialTurnosMedico');
+
+    if (result.recordset.length === 0) {
+      return res.status(404).json({ error: 'No hay turnos pasados para este médico' });
+    }
+
+    return res.status(200).json({ historial: result.recordset });
+
+  } catch (error) {
+    console.error('Error en historialTurnosMed:', error);
+    return res.status(500).json({ error: 'Error al obtener el historial de turnos del médico' });
+  }
+};
+
+exports.deleteTurno = async (req, res) => {
+  const { id_paciente, id_turno_asignado } = req.body;
+
+  if (!id_paciente || !id_turno_asignado) {
+    return res.status(409).json({ error: 'Faltan datos' });
+  }
+
+  try {
+    const pool = await connectDB();
+
+    // Verificar existencia del turno asignado
+    const idTurnoCheck = await pool.request()
+      .input('id_turno_asignado', sql.Int, id_turno_asignado)
+      .query('SELECT * FROM Turnos_asignados WHERE id_turno_asignado = @id_turno_asignado');
+
+    if (idTurnoCheck.recordset.length === 0) {
+      return res.status(404).json({ error: 'No existe ese turno asignado' });
+    }
+
+    // Verificar existencia del paciente con ese turno
+    const idPacienteCheck = await pool.request()
+      .input('id_paciente', sql.Int, id_paciente)
+      .input('id_turno_asignado', sql.Int, id_turno_asignado)
+      .query('SELECT * FROM Turnos_asignados WHERE id_paciente = @id_paciente AND id_turno_asignado = @id_turno_asignado');
+
+    if (idPacienteCheck.recordset.length === 0) {
+      return res.status(404).json({ error: 'El turno no está asignado a ese paciente' });
+    }
+
+    // Ejecutar SP
+    await pool.request()
+      .input('id_paciente', sql.Int, id_paciente)
+      .input('id_turno_asignado', sql.Int, id_turno_asignado)
+      .execute('CancelarTurno');
+
+    res.status(200).json({ message: 'Turno cancelado exitosamente' });
 
   } catch (err) {
     console.error('Error al ejecutar el SP:', err);
-    res.status(500).send('Error al cancelar el turno.');
+    res.status(500).json({ error: 'Error al cancelar el turno.' });
   }
 };
