@@ -1,7 +1,8 @@
-const argon2 = require('argon2');
+const bcrypt = require('bcrypt');
 const connectDB = require('../config/db');
 const sql = require('mssql');
 const jwt = require('jsonwebtoken');
+
 const JWT_SECRET = process.env.JWT_SECRET || 'tu_clave_secreta_aqui';
 
 // REGISTRO DE USUARIO
@@ -43,8 +44,7 @@ exports.registerUser = async (req, res) => {
       return res.status(400).json({ error: 'Falta id_especialidad para médicos' });
     }
 
-    // Hashear con argon2
-    const hashedPassword = await argon2.hash(contrasena);
+    const hashedPassword = await bcrypt.hash(contrasena, 10);
 
     await pool.request()
       .input('DNI', sql.BigInt, DNI)
@@ -90,21 +90,15 @@ exports.loginUser = async (req, res) => {
 
     const hashedPassword = user.contrasena;
 
-    if (!hashedPassword) {
-      return res.status(500).json({ error: 'Error con la contraseña almacenada' });
-    }
+    const compare = await bcrypt.compare(contrasena, hashedPassword);
 
-    // Verificar contraseña con argon2
-    const validPassword = await argon2.verify(hashedPassword, contrasena);
-
-    if (!validPassword) {
+    if (!compare) {
       return res.status(401).json({ error: 'Contraseña incorrecta' });
     }
 
-    // Generar token JWT
     const payload = {
-      id: user.id,
-      username: user.username,
+      id: user.id_usuario,
+      username: user.username
     };
 
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
