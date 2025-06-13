@@ -1,6 +1,8 @@
-const bcrypt = require('bcrypt');
+const argon2 = require('argon2');
 const connectDB = require('../config/db');
 const sql = require('mssql');
+const jwt = require('jsonwebtoken');
+const JWT_SECRET = process.env.JWT_SECRET || 'tu_clave_secreta_aqui';
 
 // REGISTRO DE USUARIO
 exports.registerUser = async (req, res) => {
@@ -41,7 +43,8 @@ exports.registerUser = async (req, res) => {
       return res.status(400).json({ error: 'Falta id_especialidad para médicos' });
     }
 
-    const hashedPassword = await bcrypt.hash(contrasena);
+    // Hashear con argon2
+    const hashedPassword = await argon2.hash(contrasena);
 
     await pool.request()
       .input('DNI', sql.BigInt, DNI)
@@ -63,9 +66,7 @@ exports.registerUser = async (req, res) => {
   }
 };
 
-
-
-// LOGIN SIMPLE
+// LOGIN DE USUARIO
 exports.loginUser = async (req, res) => {
   try {
     const { username, contrasena } = req.body;
@@ -83,19 +84,34 @@ exports.loginUser = async (req, res) => {
 
     const user = result.recordset[0];
 
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
     const hashedPassword = user.contrasena;
-    console.log(hashedPassword);
 
-    if(contrasena != user.contrasena){
-      res.status(401).json({error: 'Las contraseñas no coinciden'})
+    if (!hashedPassword) {
+      return res.status(500).json({ error: 'Error con la contraseña almacenada' });
     }
 
-    const compare = await bcrypt.compare(contrasena, hashedPassword);
-    if(!compare){
-      res.status(401).json({error: 'No hay contraseña comparable'});
+    // Verificar contraseña con argon2
+    const validPassword = await argon2.verify(hashedPassword, contrasena);
+
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Contraseña incorrecta' });
     }
 
-    res.status(200).json({user});
+    // Generar token JWT
+    const payload = {
+      id: user.id,
+      username: user.username,
+    };
+
+    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
+
+    delete user.contrasena;
+
+    res.status(200).json({ user, token });
   } catch (error) {
     console.error('Error en loginUser:', error);
     res.status(500).json({ error: 'Error al iniciar sesión' });
