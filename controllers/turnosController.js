@@ -59,8 +59,6 @@ exports.asignarTurno = async (req, res) => {
 };
 
 
-
-
 exports.getTurnos = async (req, res) => {
   try {
     const { id_usuario } = req.params;
@@ -83,7 +81,6 @@ exports.getTurnos = async (req, res) => {
     res.status(500).json({ error: 'Error al obtener los turnos' });
   }
 };
-
 
 exports.historialTurnosPac = async (req, res) => {
   const { id_paciente } = req.params;
@@ -116,7 +113,6 @@ exports.historialTurnosPac = async (req, res) => {
     return res.status(500).json({ error: 'Error al obtener el historial de turnos del paciente' });
   }
 };
-
 
 exports.historialTurnosMed = async (req, res) => {
   const { id_medico } = req.params;
