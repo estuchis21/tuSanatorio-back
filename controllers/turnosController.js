@@ -59,8 +59,28 @@ exports.asignarTurno = async (req, res) => {
 };
 
 
+
 exports.getTurnos = async (req, res) => {
-  // Lógica para obtener los turnos del usuario actual
+  try {
+    const { id_usuario } = req.params;  // O req.query / req.body, según cómo envíes el ID
+
+    if (!id_usuario) {
+      return res.status(400).json({ error: 'Falta el id_usuario' });
+    }
+
+    const pool = await connectDB();
+
+    const result = await pool.request()
+      .input('id_usuario', sql.Int, id_usuario)
+      .execute('MisTurnos');
+
+    // result.recordset tendrá la lista de turnos con la columna 'Fecha de Asignación del Turno'
+    res.json(result.recordset);
+
+  } catch (error) {
+    console.error('Error en getTurnos:', error);
+    res.status(500).json({ error: 'Error al obtener los turnos' });
+  }
 };
 
 
