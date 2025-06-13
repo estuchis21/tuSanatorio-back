@@ -1,6 +1,8 @@
-const bcrypt = require('bcrypt');
+const argon2 = require('argon2');
 const connectDB = require('../config/db');
 const sql = require('mssql');
+const jwt = require('jsonwebtoken');
+const JWT_SECRET = process.env.JWT_SECRET || 'tu_clave_secreta_aqui';
 
 // REGISTRO DE USUARIO
 exports.registerUser = async (req, res) => {
@@ -41,7 +43,8 @@ exports.registerUser = async (req, res) => {
       return res.status(400).json({ error: 'Falta id_especialidad para médicos' });
     }
 
-    const hashedPassword = await bcrypt.hash(contrasena, 10);
+    // Hashear con argon2
+    const hashedPassword = await argon2.hash(contrasena);
 
     await pool.request()
       .input('DNI', sql.BigInt, DNI)
@@ -63,6 +66,7 @@ exports.registerUser = async (req, res) => {
   }
 };
 
+// LOGIN DE USUARIO
 exports.loginUser = async (req, res) => {
   try {
     const { username, contrasena } = req.body;
@@ -90,19 +94,24 @@ exports.loginUser = async (req, res) => {
       return res.status(500).json({ error: 'Error con la contraseña almacenada' });
     }
 
-    console.log("Contraseña ingresada:", contrasena);
-    console.log("Hash guardado:", hashedPassword);
+    // Verificar contraseña con argon2
+    const validPassword = await argon2.verify(hashedPassword, contrasena);
 
-    const compare = await bcrypt.compare(contrasena, hashedPassword);
-    console.log("¿Coinciden?", compare);
-
-    if (!compare) {
+    if (!validPassword) {
       return res.status(401).json({ error: 'Contraseña incorrecta' });
     }
 
+    // Generar token JWT
+    const payload = {
+      id: user.id,
+      username: user.username,
+    };
+
+    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
+
     delete user.contrasena;
 
-    res.status(200).json(user);
+    res.status(200).json({ user, token });
 
   } catch (error) {
     console.error('Error en loginUser:', error);
