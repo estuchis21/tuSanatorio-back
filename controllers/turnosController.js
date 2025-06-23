@@ -28,7 +28,7 @@ exports.asignarTurno = async (req, res) => {
     // Verificar si el turno ya fue asignado
     const turnoAsignado = await pool.request()
       .input('id_turno', sql.Int, id_turno)
-      .query('SELECT * FROM Turnos_asignados WHERE id_turno = @id_turno');
+      .execute('TurnoAsignadoCheck');
 
     if (turnoAsignado.recordset.length > 0) {
       return res.status(409).json({ error: 'El turno ya está asignado' });
@@ -37,7 +37,7 @@ exports.asignarTurno = async (req, res) => {
     // Verificar si el turno está disponible
     const turnoDisponible = await pool.request()
       .input('id_turno', sql.Int, id_turno)
-      .query('SELECT * FROM Turnos_disponibles WHERE id_turno = @id_turno');
+      .execute('TurnoDisponibleCheck');
 
     if (turnoDisponible.recordset.length === 0) {
       return res.status(409).json({ error: 'El turno no está disponible' });
@@ -95,7 +95,7 @@ exports.historialTurnosPac = async (req, res) => {
     // Verificar si el paciente tiene turnos asignados
     const checkResult = await pool.request()
       .input('id_paciente', sql.Int, id_paciente)
-      .query('SELECT * FROM Turnos_asignados WHERE id_paciente = @id_paciente');
+      .execute('PacienteEnTurnosAsignados');
 
     if (checkResult.recordset.length === 0) {
       return res.status(404).json({ error: 'No existe el paciente en la tabla de turnos asignados' });
@@ -156,7 +156,7 @@ exports.deleteTurno = async (req, res) => {
     // Verificar existencia del turno asignado
     const idTurnoCheck = await pool.request()
       .input('id_turno_asignado', sql.Int, id_turno_asignado)
-      .query('SELECT * FROM Turnos_asignados WHERE id_turno_asignado = @id_turno_asignado');
+      .execute('CheckTurnoAsignado');
 
     if (idTurnoCheck.recordset.length === 0) {
       return res.status(404).json({ error: 'No existe ese turno asignado' });
@@ -166,7 +166,7 @@ exports.deleteTurno = async (req, res) => {
     const idPacienteCheck = await pool.request()
       .input('id_paciente', sql.Int, id_paciente)
       .input('id_turno_asignado', sql.Int, id_turno_asignado)
-      .query('SELECT * FROM Turnos_asignados WHERE id_paciente = @id_paciente AND id_turno_asignado = @id_turno_asignado');
+      .execute('IdPaciente_IdTurnoAsignado');
 
     if (idPacienteCheck.recordset.length === 0) {
       return res.status(404).json({ error: 'El turno no está asignado a ese paciente' });
@@ -185,3 +185,32 @@ exports.deleteTurno = async (req, res) => {
     res.status(500).json({ error: 'Error al cancelar el turno.' });
   }
 };
+
+exports.obtenerTurnosDisponibles = async (req, res) => {
+  const id = parseInt(req.params.id_medico, 10);
+
+  if (isNaN(id)) {
+    return res.status(400).json({ error: "El parámetro id_medico no es un número válido" });
+  }
+
+  if(!id){
+    return res.status(404).json({error: 'No existe tal medico en la base de datos'});
+  }
+
+  try {
+    const pool = await connectDB();
+    const execute = await pool.request()
+      .input('id_medico', sql.Int, id)
+      .execute('GetTurnosDisponibles');
+
+    if (execute.recordset.length === 0) {
+      return res.status(404).json({ error: 'El médico no tiene turnos disponibles' });
+    }
+
+    return res.status(200).json(execute.recordset);
+
+  } catch (error) {
+    console.error("Error al obtener turnos disponibles:", error);
+    return res.status(500).json({ error: 'Hubo error para obtener los turnos disponibles' });
+  }
+}

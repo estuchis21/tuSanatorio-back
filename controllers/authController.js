@@ -31,7 +31,7 @@ exports.registerUser = async (req, res) => {
       .input('DNI', sql.BigInt, DNI)
       .input('email', sql.VarChar, email)
       .input('username', sql.VarChar, username)
-      .query(`SELECT * FROM Usuarios WHERE DNI = @DNI OR email = @email OR username = @username`);
+      .execute(`EXISTENTE`);
 
     if (check.recordset.length > 0) {
       const existente = check.recordset[0];
@@ -105,7 +105,7 @@ exports.loginUser = async (req, res) => {
 
     delete user.contrasena;
 
-    res.status(200).json({ user, token });
+    res.status(200).json({ token });
 
   } catch (error) {
     console.error('Error en loginUser:', error);
