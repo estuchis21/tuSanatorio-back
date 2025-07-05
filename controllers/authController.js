@@ -105,10 +105,24 @@ exports.loginUser = async (req, res) => {
 
     delete user.contrasena;
 
-    res.status(200).json({ token });
+    res.status(200).json({ token, user }); // 👈 agregá esto
+
 
   } catch (error) {
     console.error('Error en loginUser:', error);
     res.status(500).json({ error: 'Error al iniciar sesión' });
   }
 };
+
+exports.getEspecialidades = async (req, res) => {
+  try {
+    const pool = await connectDB();
+    const result = await pool.request().execute("getEspecialidades");
+    const especialidades = result.recordset;
+
+    res.status(200).json(especialidades);
+  } catch (error) {
+    console.error("Error al obtener especialidades:", error);
+    res.status(500).json({ message: "Error al obtener especialidades" });
+  }
+}
