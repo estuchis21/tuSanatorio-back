@@ -126,3 +126,55 @@ exports.getEspecialidades = async (req, res) => {
     res.status(500).json({ message: "Error al obtener especialidades" });
   }
 }
+
+// Obtener id_paciente según id_usuario
+exports.getPacienteByUsuarioId = async (req, res) => {
+  try {
+    const { id_usuario } = req.params;
+
+    if (!id_usuario || isNaN(Number(id_usuario))) {
+      return res.status(400).json({ error: "Falta o es inválido el id_usuario" });
+    }
+
+    const pool = await connectDB();
+
+    const result = await pool.request()
+      .input('id_usuario', sql.Int, Number(id_usuario))
+      .query('SELECT id_paciente FROM Pacientes WHERE id_usuario = @id_usuario');
+
+    if (result.recordset.length === 0) {
+      return res.status(404).json({ error: 'Paciente no encontrado para ese usuario' });
+    }
+
+    res.json({ id_paciente: result.recordset[0].id_paciente });
+  } catch (error) {
+    console.error('Error en getPacienteByUsuarioId:', error);
+    res.status(500).json({ error: 'Error al obtener paciente' });
+  }
+};
+
+// (Opcional) Obtener id_medico según id_usuario
+exports.getMedicoByUsuarioId = async (req, res) => {
+  try {
+    const { id_usuario } = req.params;
+
+    if (!id_usuario || isNaN(Number(id_usuario))) {
+      return res.status(400).json({ error: "Falta o es inválido el id_usuario" });
+    }
+
+    const pool = await connectDB();
+
+    const result = await pool.request()
+      .input('id_usuario', sql.Int, Number(id_usuario))
+      .query('SELECT id_medico FROM Medicos WHERE id_usuario = @id_usuario');
+
+    if (result.recordset.length === 0) {
+      return res.status(404).json({ error: 'Médico no encontrado para ese usuario' });
+    }
+
+    res.json({ id_medico: result.recordset[0].id_medico });
+  } catch (error) {
+    console.error('Error en getMedicoByUsuarioId:', error);
+    res.status(500).json({ error: 'Error al obtener médico' });
+  }
+};

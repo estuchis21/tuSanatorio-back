@@ -61,26 +61,35 @@ exports.asignarTurno = async (req, res) => {
 
 exports.getTurnos = async (req, res) => {
   try {
-    const { id_usuario } = req.params;
+    const { id_paciente } = req.params;
 
-    if (!id_usuario) {
-      return res.status(400).json({ error: 'Falta el id_usuario' });
+    if (!id_paciente || isNaN(Number(id_paciente))) {
+      return res.status(400).json({ error: 'Falta o es inválido el id_paciente' });
     }
 
     const pool = await connectDB();
 
     const result = await pool.request()
-      .input('id_usuario', sql.Int, id_usuario)
+      .input('id_paciente', sql.Int, Number(id_paciente))
       .execute('MisTurnos');
 
-    // result.recordset tendrá la lista de turnos con la columna 'Fecha de Asignación del Turno'
-    res.json(result.recordset);
+    if (result.recordset.length === 0) {
+      return res.status(404).json({ error: 'Paciente sin turnos asignados' });
+    }
+
+    // Devuelve todos los turnos en un array
+    return res.json({
+      id_paciente: Number(id_paciente),
+      turnos: result.recordset
+    });
 
   } catch (error) {
     console.error('Error en getTurnos:', error);
     res.status(500).json({ error: 'Error al obtener los turnos' });
   }
 };
+
+
 
 exports.historialTurnosPac = async (req, res) => {
   const { id_paciente } = req.params;
