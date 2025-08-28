@@ -120,12 +120,33 @@ exports.getEspecialidades = async (req, res) => {
     const result = await pool.request().execute("getEspecialidades");
     const especialidades = result.recordset;
 
-    res.status(200).json(especialidades);
+    return res.status(200).json(especialidades);
   } catch (error) {
     console.error("Error al obtener especialidades:", error);
     res.status(500).json({ message: "Error al obtener especialidades" });
   }
 }
+
+exports.getEspecialidadesPorMedico = async (req, res) => {
+  const { id_medico } = req.params;
+
+  if (id_medico == null) {
+    return res.status(404).json({ error: "No existe tal médico en tal especialidad" });
+  }
+
+  try {
+    const pool = await connectDB();
+    const result = await pool.request()
+      .input('id_medico', sql.Int, id_medico)
+      .execute("getEspecialidadesPorMédico");
+
+    return res.status(200).json(result.recordset); // recordset es síncrono
+  } catch (error) {
+    console.error("Error al obtener especialidades por médico:", error);
+    return res.status(500).json({ message: "Error al obtener especialidades por médico." });
+  }
+};
+
 
 // Obtener id_paciente según id_usuario
 exports.getPacienteByUsuarioId = async (req, res) => {

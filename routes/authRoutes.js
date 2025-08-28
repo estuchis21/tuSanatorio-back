@@ -7,5 +7,6 @@ router.post('/register', authController.registerUser);
 router.get('/getEspecialidades', authController.getEspecialidades)
 router.get('/paciente/usuario/:id_usuario', authController.getPacienteByUsuarioId);
 router.get('/medico/usuario/:id_usuario', authController.getMedicoByUsuarioId);
+router.get('/getEspecialidadesPorMedico/:id_medico', authController.getEspecialidadesPorMedico);
 
 module.exports = router;
