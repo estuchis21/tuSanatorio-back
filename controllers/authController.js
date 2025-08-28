@@ -148,6 +148,33 @@ exports.getEspecialidadesPorMedico = async (req, res) => {
 };
 
 
+exports.getMedicosPorEspecialidad = async (req, res) => {
+  try {
+    const { id_especialidad } = req.params;
+
+    if (!id_especialidad || isNaN(Number(id_especialidad))) {
+      return res.status(400).json({ error: "Falta o es inválido el id_especialidad" });
+    }
+
+    const pool = await connectDB();
+
+    const result = await pool.request()
+      .input("id_especialidad", sql.Int, Number(id_especialidad))
+      .execute("MedicosPorEspecialidad"); // el nombre del SP
+
+    if (!result.recordset || result.recordset.length === 0) {
+      return res.status(404).json({ error: "No se encontraron médicos para esa especialidad" });
+    }
+
+    res.json(result.recordset);
+  } catch (error) {
+    console.error("Error al obtener médicos por especialidad:", error);
+    res.status(500).json({ error: "Error al obtener médicos por especialidad" });
+  }
+};
+
+
+
 // Obtener id_paciente según id_usuario
 exports.getPacienteByUsuarioId = async (req, res) => {
   try {
