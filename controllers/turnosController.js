@@ -126,7 +126,6 @@ exports.historialTurnosPac = async (req, res) => {
 exports.historialTurnosMed = async (req, res) => {
   const { id_medico } = req.params;
 
-  // Validar que id_medico sea un número válido
   const id = parseInt(id_medico, 10);
   if (isNaN(id)) {
     return res.status(400).json({ error: 'ID de médico inválido' });
@@ -134,23 +133,19 @@ exports.historialTurnosMed = async (req, res) => {
 
   try {
     const pool = await connectDB();
-
-    // Ejecutar el stored procedure
     const result = await pool.request()
       .input('id_medico', sql.Int, id)
       .execute('HistorialTurnosMedico');
 
-    if (result.recordset.length === 0) {
-      return res.status(404).json({ error: 'No hay turnos pasados para este médico' });
-    }
-
-    return res.status(200).json({ historial: result.recordset });
+    // Devuelve directamente el recordset como array
+    return res.status(200).json(result.recordset);
 
   } catch (error) {
     console.error('Error en historialTurnosMed:', error);
     return res.status(500).json({ error: 'Error al obtener el historial de turnos del médico' });
   }
 };
+
 
 exports.deleteTurno = async (req, res) => {
   const { id_paciente, id_turno_asignado } = req.body;
