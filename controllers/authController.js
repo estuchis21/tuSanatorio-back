@@ -173,6 +173,34 @@ exports.getMedicosPorEspecialidad = async (req, res) => {
   }
 };
 
+exports.getHorariosPorMedico = async (req, res) => {
+  try {
+    const { id_medico } = req.params;
+
+    if (!id_medico || isNaN(Number(id_medico))) {
+      return res.status(400).json({ error: "Falta o es inválido el id_medico" });
+    }
+
+    const pool = await connectDB();
+
+    const result = await pool.request()
+      .input("id_medico", sql.Int, Number(id_medico))
+      .execute("horariosPorMedico");
+
+    // Mapea los resultados para asegurar que hora_inicio y hora_fin existan
+    const horarios = (result.recordset || []).map(r => ({
+      hora_inicio: r.hora_inicio || null,
+      hora_fin: r.hora_fin || null
+    }));
+
+    res.json(horarios);
+
+  } catch (error) {
+    console.error("Error al obtener horarios por médico:", error);
+    res.status(500).json({ error: "Error al obtener horarios por médico" });
+  }
+};
+
 
 
 // Obtener id_paciente según id_usuario

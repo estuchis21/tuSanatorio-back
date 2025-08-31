@@ -9,5 +9,6 @@ router.get('/paciente/usuario/:id_usuario', authController.getPacienteByUsuarioI
 router.get('/medico/usuario/:id_usuario', authController.getMedicoByUsuarioId);
 router.get('/getEspecialidadesPorMedico/:id_medico', authController.getEspecialidadesPorMedico);
 router.get('/getMedicosPorEspecialidad/:id_especialidad', authController.getMedicosPorEspecialidad);
+router.get('/horarios/:id_medico', authController.getHorariosPorMedico);
 
 module.exports = router;

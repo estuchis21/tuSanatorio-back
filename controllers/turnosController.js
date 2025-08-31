@@ -197,19 +197,23 @@ exports.deleteTurno = async (req, res) => {
 
 exports.obtenerTurnosDisponibles = async (req, res) => {
   const id = parseInt(req.params.id_medico, 10);
+  const id_especialidad = parseInt(req.params.id_especialidad, 10);
 
-  if (isNaN(id)) {
-    return res.status(400).json({ error: "El parámetro id_medico no es un número válido" });
+  if (isNaN(id) || isNaN(id_especialidad)) {
+    return res.status(400).json({ error: "El parámetro id_medico ni id_especialidad no son un número válido" });
   }
 
   if(!id){
     return res.status(404).json({error: 'No existe tal medico en la base de datos'});
   }
 
+  if(!id_especialidad) return res.status(404).json({error: 'No existe tal especialidad en la base de datos'});
+
   try {
     const pool = await connectDB();
     const execute = await pool.request()
       .input('id_medico', sql.Int, id)
+      .input('id_especialidad', sql.Int, id_especialidad)
       .execute('GetTurnosDisponibles');
 
     if (execute.recordset.length === 0) {
@@ -223,3 +227,21 @@ exports.obtenerTurnosDisponibles = async (req, res) => {
     return res.status(500).json({ error: 'Hubo error para obtener los turnos disponibles' });
   }
 }
+
+exports.obtenerObraSocial = async (req, res) => {
+  try {
+    const pool = await connectDB();
+    const result = await pool.request()
+      .execute("GetObrasSociales");
+
+    if (result.recordset.length === 0) {
+      return res.status(404).json({ error: "No se encontró la obra social solicitada" });
+    }
+
+    return res.status(200).json(result.recordset);
+
+  } catch (error) {
+    console.error("Error al obtener la obra social:", error);
+    return res.status(500).json({ error: "Hubo un error en el servidor al obtener la obra social" });
+  }
+};
