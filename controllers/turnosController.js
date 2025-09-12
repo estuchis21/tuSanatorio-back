@@ -59,33 +59,30 @@ exports.asignarTurno = async (req, res) => {
 };
 
 
+// GET /api/getTurnos/:id_paciente
 exports.getTurnos = async (req, res) => {
   try {
     const { id_paciente } = req.params;
 
     if (!id_paciente || isNaN(Number(id_paciente))) {
-      return res.status(400).json({ error: 'Falta o es inválido el id_paciente' });
+      return res.status(400).json({ error: "Falta o es inválido el id_paciente" });
     }
 
     const pool = await connectDB();
 
-    const result = await pool.request()
-      .input('id_paciente', sql.Int, Number(id_paciente))
-      .execute('MisTurnos');
+    const result = await pool
+      .request()
+      .input("id_paciente", sql.Int, Number(id_paciente))
+      .execute("MisTurnos"); // stored procedure
 
-    if (result.recordset.length === 0) {
-      return res.status(404).json({ error: 'Paciente sin turnos asignados' });
+    if (!result.recordset || result.recordset.length === 0) {
+      return res.status(404).json({ error: "Paciente sin turnos asignados" });
     }
 
-    // Devuelve todos los turnos en un array
-    return res.json({
-      id_paciente: Number(id_paciente),
-      turnos: result.recordset
-    });
-
+    res.json({ turnos: result.recordset });
   } catch (error) {
-    console.error('Error en getTurnos:', error);
-    res.status(500).json({ error: 'Error al obtener los turnos' });
+    console.error("Error en getTurnos:", error);
+    res.status(500).json({ error: "Error al obtener los turnos" });
   }
 };
 

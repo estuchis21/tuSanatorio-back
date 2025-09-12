@@ -105,12 +105,33 @@ exports.loginUser = async (req, res) => {
 
     delete user.contrasena;
 
-    res.status(200).json({ token, user }); // 👈 agregá esto
+    return res.status(200).json({ token, user }); // 👈 agregá esto
 
 
   } catch (error) {
     console.error('Error en loginUser:', error);
     res.status(500).json({ error: 'Error al iniciar sesión' });
+  }
+};
+
+exports.getUsuarioById = async (req, res) => {
+  try {
+    const {id_usuario} = req.params;
+
+    const pool = await connectDB();
+
+    const result = await pool.request()
+      .input("id_usuario", sql.Int, id_usuario)
+      .execute("sp_GetUsuarioById");
+
+    // No usar res aquí
+    if (result.recordset.length === 0) return null;
+    
+    return res.status(200).json(result.recordset[0]);
+
+  } catch (error) {
+    console.error("Error al obtener usuario:", error);
+    throw error;
   }
 };
 
@@ -160,7 +181,7 @@ exports.getMedicosPorEspecialidad = async (req, res) => {
 
     const result = await pool.request()
       .input("id_especialidad", sql.Int, Number(id_especialidad))
-      .execute("MedicosPorEspecialidad"); // el nombre del SP
+      .execute("MedicosPorEspecialidad");
 
     if (!result.recordset || result.recordset.length === 0) {
       return res.status(404).json({ error: "No se encontraron médicos para esa especialidad" });
@@ -252,5 +273,31 @@ exports.getMedicoByUsuarioId = async (req, res) => {
   } catch (error) {
     console.error('Error en getMedicoByUsuarioId:', error);
     res.status(500).json({ error: 'Error al obtener médico' });
+  }
+};
+
+exports.getObrasPorMedico = async (req, res) => {
+  const { id_medico } = req.params;
+
+  const idMedicoNum = parseInt(id_medico, 10);
+  if (isNaN(idMedicoNum)) {
+    return res.status(400).json({ error: 'id_medico debe ser un número válido' });
+  }
+
+  try {
+    const pool = await connectDB();
+    const result = await pool.request()
+      .input('id_medico', sql.Int, idMedicoNum)
+      .execute('GetObrasSocialesPorMedico');
+
+    if (!result.recordset || result.recordset.length === 0) {
+      return res.status(404).json({ error: 'No hay registros disponibles' });
+    }
+
+    // Devolver todo el recordset como array
+    res.status(200).json({ obras_sociales: result.recordset });
+  } catch (error) {
+    console.error('Error al obtener obras sociales por médico:', error);
+    res.status(500).json({ error: 'Error al obtener obras sociales por médico' });
   }
 };
