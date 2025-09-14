@@ -17,10 +17,11 @@ exports.registerUser = async (req, res) => {
       telefono,
       contrasena,
       id_rol,
-      id_especialidad = null
+      id_especialidad = null,
+      id_obra_social
     } = req.body;
 
-    if (!DNI || !nombres || !apellido || !email || !username || !telefono || !contrasena || !id_rol) {
+    if (!DNI || !nombres || !apellido || !email || !username || !telefono || !contrasena || !id_rol || !id_obra_social) {
       return res.status(400).json({ error: 'Faltan campos obligatorios' });
     }
 
@@ -56,6 +57,7 @@ exports.registerUser = async (req, res) => {
       .input('contrasena', sql.VarChar, hashedPassword)
       .input('id_rol', sql.Int, id_rol)
       .input('id_especialidad', sql.Int, id_especialidad)
+      .input('id_obra_social', sql.Int, id_obra_social)
       .execute('insertarUsuario');
 
     res.status(201).json({ message: 'Usuario registrado correctamente' });
@@ -105,7 +107,7 @@ exports.loginUser = async (req, res) => {
 
     delete user.contrasena;
 
-    return res.status(200).json({ token, user }); // 👈 agregá esto
+    return res.status(200).json({ token, user }); 
 
 
   } catch (error) {
@@ -124,7 +126,6 @@ exports.getUsuarioById = async (req, res) => {
       .input("id_usuario", sql.Int, id_usuario)
       .execute("sp_GetUsuarioById");
 
-    // No usar res aquí
     if (result.recordset.length === 0) return null;
     
     return res.status(200).json(result.recordset[0]);
