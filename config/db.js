@@ -1,6 +1,4 @@
-// C:\Users\Esteban\Desktop\tuSanatorio\tuSanatorio-back\config\db.js
-
-require('dotenv').config(); // Carga variables desde el .env
+require('dotenv').config();
 const sql = require('mssql');
 
 const config = {
@@ -10,10 +8,17 @@ const config = {
   database: process.env.DB_DATABASE,
   port: process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : 1433,
   options: {
-    encrypt: process.env.DB_ENCRYPT === 'true', // true o false según el .env
-    trustServerCertificate: process.env.DB_TRUST_CERT === 'true' // true o false según el .env
+    encrypt: process.env.DB_ENCRYPT === 'true',
+    trustServerCertificate: process.env.DB_TRUST_CERT === 'true'
   }
 };
+
+// Validación simple
+for (const key of ['DB_USER', 'DB_PASSWORD', 'DB_SERVER', 'DB_DATABASE']) {
+  if (!process.env[key]) {
+    console.warn(`⚠️  Variable de entorno ${key} no definida`);
+  }
+}
 
 const connectDB = async () => {
   try {
@@ -21,9 +26,14 @@ const connectDB = async () => {
     console.log('✅ Conectado a la base de datos');
     return pool;
   } catch (err) {
-    console.error('❌ Error de conexión a la base de datos:', err);
-    throw err;
+    console.error('❌ Error de conexión a la base de datos:', err.message);
+    console.log('Configuración usada:', {
+      server: config.server,
+      database: config.database,
+      port: config.port
+    });
+    process.exit(1); // termina el contenedor si falla la conexión
   }
 };
 
-module.exports = connectDB;
+module.exports = { connectDB };

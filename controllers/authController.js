@@ -1,5 +1,5 @@
 const bcrypt = require('bcrypt');
-const connectDB = require('../config/db');
+const { connectDB } = require('../config/db');
 const sql = require('mssql');
 const jwt = require('jsonwebtoken');
 
@@ -301,3 +301,91 @@ exports.getObrasPorMedico = async (req, res) => {
     res.status(500).json({ error: 'Error al obtener obras sociales por médico' });
   }
 };
+
+exports.actualizarMail = async (req, res) => {
+  const { email } = req.body;
+  const { id_usuario } = req.params;
+
+  if (!email) {
+    return res.status(400).json({ error: "No se proveyó el mail" });
+  }
+
+  try {
+    const pool = await connectDB();
+    const result = await pool.request()
+      .input('email', sql.VarChar(100), email)
+      .input('id_usuario', sql.Int, id_usuario)
+      .execute('actualizarMail');
+
+    if (!result.recordset[0]) {
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
+
+    return res.status(200).json(result.recordset[0]);
+  } catch (error) {
+    console.error("SQL ERROR:", error);
+    return res.status(500).json({ error: "Error al actualizar mail" });
+  }
+}
+
+
+exports.actualizarUsername = async (req, res) => {
+  const {username} = req.body;
+  const {id_usuario} = req.params;
+
+  if(!username) {
+    return res.status(400).json({error: "No se proveyó el usuario"});
+  }
+
+  try{
+    const pool = await connectDB();
+    const result = await pool.request()
+      .input('username', sql.VarChar(50), username)
+      .input('id_usuario', sql.Int, id_usuario)
+      .execute('actualizarUsername');
+
+    if (!result.recordset || result.recordset.length === 0) {
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
+
+    return res.status(200).json(result.recordset[0]);
+
+  }
+  catch(error){
+    console.error(error);
+    return res.status(500).json({error: "Error al actualizar mail"});
+  }
+
+}
+
+exports.actualizarContrasena = async (req, res) => {
+  const {contrasena} = req.body;
+  const {id_usuario} = req.params;
+
+  if(!contrasena) {
+    return res.status(400).json({error: "No se proveyó el usuario"});
+  }
+
+  try{
+    const pool = await connectDB();
+
+    const hashedPassword = await bcrypt.hash(contrasena, 10);
+
+    const result = await pool.request()
+      .input('contrasena', sql.VarChar(200), hashedPassword)
+      .input('id_usuario', sql.Int, id_usuario)
+      .execute('actualizarContrasena');
+
+    if (!result.recordset || result.recordset.length === 0) {
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
+
+    return res.status(200).json(result.recordset[0]);
+
+  }
+  catch(error){
+    console.error(error);
+    return res.status(500).json({error: "Error al actualizar contrasena"});
+  }
+
+}

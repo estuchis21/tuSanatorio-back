@@ -1,4 +1,4 @@
-const connectDB = require('../config/db');
+const {connectDB} = require('../config/db');
 const sql = require('mssql');
 
 exports.asignarTurno = async (req, res) => {
@@ -58,67 +58,44 @@ exports.asignarTurno = async (req, res) => {
   }
 };
 
-
-// GET /api/getTurnos/:id_paciente
+// Próximos turnos
 exports.getTurnos = async (req, res) => {
   try {
     const { id_paciente } = req.params;
-
-    if (!id_paciente || isNaN(Number(id_paciente))) {
-      return res.status(400).json({ error: "Falta o es inválido el id_paciente" });
-    }
+    if (!id_paciente) return res.status(400).json({ error: "Falta id_paciente" });
 
     const pool = await connectDB();
-
-    const result = await pool
-      .request()
+    const result = await pool.request()
       .input("id_paciente", sql.Int, Number(id_paciente))
-      .execute("MisTurnos"); // stored procedure
+      .execute("MisProximosTurnos");
 
-    if (!result.recordset || result.recordset.length === 0) {
-      return res.status(404).json({ error: "Paciente sin turnos asignados" });
-    }
-
-    res.json({ turnos: result.recordset });
+    // Siempre devolvemos array, aunque esté vacío
+    res.json({ turnos: result.recordset || [] });
   } catch (error) {
-    console.error("Error en getTurnos:", error);
+    console.error(error);
     res.status(500).json({ error: "Error al obtener los turnos" });
   }
 };
 
-
-
+// Historial de turnos
 exports.historialTurnosPac = async (req, res) => {
-  const { id_paciente } = req.params;
-
-  if (!id_paciente) {
-    return res.status(400).json({ error: 'ID de paciente no proporcionado' });
-  }
-
   try {
+    const { id_paciente } = req.params;
+    if (!id_paciente) return res.status(400).json({ error: "Falta id_paciente" });
+
     const pool = await connectDB();
-
-    // Verificar si el paciente tiene turnos asignados
-    const checkResult = await pool.request()
-      .input('id_paciente', sql.Int, id_paciente)
-      .execute('PacienteEnTurnosAsignados');
-
-    if (checkResult.recordset.length === 0) {
-      return res.status(404).json({ error: 'No existe el paciente en la tabla de turnos asignados' });
-    }
-
-    // Llamar al stored procedure HistorialTurnos
     const result = await pool.request()
-      .input('id_paciente', sql.Int, id_paciente)
-      .execute('HistorialTurnos');
+      .input("id_paciente", sql.Int, Number(id_paciente))
+      .execute("MisTurnosHistoricos");
 
-    return res.status(200).json({ historial: result.recordset });
-
+    // Siempre devolvemos array, aunque esté vacío
+    res.json({ historial: result.recordset || [] });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ error: 'Error al obtener el historial de turnos del paciente' });
+    res.status(500).json({ error: "Error al obtener el historial de turnos" });
   }
 };
+
 
 exports.historialTurnosMed = async (req, res) => {
   const { id_medico } = req.params;
