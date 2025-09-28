@@ -302,90 +302,35 @@ exports.getObrasPorMedico = async (req, res) => {
   }
 };
 
-exports.actualizarMail = async (req, res) => {
-  const { email } = req.body;
-  const { id_usuario } = req.params;
 
-  if (!email) {
-    return res.status(400).json({ error: "No se proveyó el mail" });
-  }
-
+exports.actualizarPerfil = async (req, res) => {
   try {
-    const pool = await connectDB();
-    const result = await pool.request()
-      .input('email', sql.VarChar(100), email)
-      .input('id_usuario', sql.Int, id_usuario)
-      .execute('actualizarMail');
+    const { email, telefono, username, contrasena } = req.body;
+    const { id_usuario } = req.params;
 
-    if (!result.recordset[0]) {
-      return res.status(404).json({ error: "Usuario no encontrado" });
-    }
-
-    return res.status(200).json(result.recordset[0]);
-  } catch (error) {
-    console.error("SQL ERROR:", error);
-    return res.status(500).json({ error: "Error al actualizar mail" });
-  }
-}
-
-
-exports.actualizarUsername = async (req, res) => {
-  const {username} = req.body;
-  const {id_usuario} = req.params;
-
-  if(!username) {
-    return res.status(400).json({error: "No se proveyó el usuario"});
-  }
-
-  try{
-    const pool = await connectDB();
-    const result = await pool.request()
-      .input('username', sql.VarChar(50), username)
-      .input('id_usuario', sql.Int, id_usuario)
-      .execute('actualizarUsername');
-
-    if (!result.recordset || result.recordset.length === 0) {
-      return res.status(404).json({ error: "Usuario no encontrado" });
-    }
-
-    return res.status(200).json(result.recordset[0]);
-
-  }
-  catch(error){
-    console.error(error);
-    return res.status(500).json({error: "Error al actualizar mail"});
-  }
-
-}
-
-exports.actualizarContrasena = async (req, res) => {
-  const {contrasena} = req.body;
-  const {id_usuario} = req.params;
-
-  if(!contrasena) {
-    return res.status(400).json({error: "No se proveyó el usuario"});
-  }
-
-  try{
-    const pool = await connectDB();
+    const conexion = await connectDB();
 
     const hashedPassword = await bcrypt.hash(contrasena, 10);
 
-    const result = await pool.request()
-      .input('contrasena', sql.VarChar(200), hashedPassword)
-      .input('id_usuario', sql.Int, id_usuario)
-      .execute('actualizarContrasena');
 
-    if (!result.recordset || result.recordset.length === 0) {
-      return res.status(404).json({ error: "Usuario no encontrado" });
+    // Ejecutar procedimiento almacenado
+    await conexion.request()
+      .input("email", email || null)
+      .input("telefono", telefono || null)
+      .input("username", username || null)
+      .input("contrasena", hashedPassword)
+      .input("id_usuario", id_usuario)
+      .execute("actualizarPerfil");
+
+    res.status(200).json({ message: "Perfil actualizado correctamente" });
+  } catch (error) {
+    console.error("Error al actualizar perfil:", error);
+
+    // Manejo básico de duplicados
+    if (error.number === 2627) {
+      return res.status(400).json({ error: "El email o teléfono ya existe en otro usuario" });
     }
 
-    return res.status(200).json(result.recordset[0]);
-
+    res.status(500).json({ error: "No se pudo actualizar el perfil" });
   }
-  catch(error){
-    console.error(error);
-    return res.status(500).json({error: "Error al actualizar contrasena"});
-  }
-
-}
+};
