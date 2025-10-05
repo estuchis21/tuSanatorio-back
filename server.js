@@ -10,8 +10,11 @@ app.use(express.urlencoded({ extended: true }));
 // Rutas
 const turnosRoutes = require('./routes/turnosRoutes');
 const authRoutes = require('./routes/authRoutes');
+const historiasRoutes = require('./routes/historiasClinicasRoutes');
+
 app.use('/turnos', turnosRoutes);
 app.use('/auth', authRoutes);
+app.use('/historias', historiasRoutes);
 
 // Test simple
 app.get('/', (req, res) => {
