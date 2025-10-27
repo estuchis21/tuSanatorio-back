@@ -253,54 +253,40 @@ exports.obtenerObraSocial = async (req, res) => {
 exports.insertTurnosDisp = async (req, res) => {
   const { id_medico, id_rango, fecha_turno } = req.body;
 
-  // 🔹 Validación de datos faltantes
-  if (!id_medico) {
-    return res.status(400).json({ error: 'Falta el ID del médico' });
-  }
-  if (!id_rango) {
-    return res.status(400).json({ error: 'Falta el rango horario' });
-  }
-  if (!fecha_turno) {
-    return res.status(400).json({ error: 'Falta la fecha del turno' });
+  if (!id_medico || !id_rango || !fecha_turno) {
+    return res.status(400).json({ error: 'Faltan datos obligatorios' });
   }
 
   try {
     const pool = await connectDB();
 
-    // 🔹 Verificar si ya existe un turno con la misma fecha y rango
     const result = await pool.request()
-      .input('id_medico', sql.Int, id_medico)
-      .input('id_rango', sql.Int, id_rango)
-      .input('fecha_turno', sql.Date, fecha_turno)
-      .execute(`checkDobleTurno`);
+    .input('id_medico', sql.Int, Number(id_medico))
+    .input('id_rango', sql.Int, Number(id_rango))
+    .input('fecha_turno', sql.Date, fecha_turno) // YYYY-MM-DD string está bien
+    .execute('checkDobleTurno');
 
-    if (result.recordset[0].cantidad > 0) {
+    console.log(result.recordset); // para depuración
+
+    if (result.recordset.length > 0 && result.recordset[0].cantidad > 0) {
       return res.status(409).json({ error: 'Ya existe un turno disponible para ese horario y fecha' });
     }
 
-    // 🔹 Insertar el nuevo turno si no existe
+    // 🔹 Insertamos
     await pool.request()
       .input('id_medico', sql.Int, id_medico)
       .input('id_rango', sql.Int, id_rango)
       .input('fecha_turno', sql.Date, fecha_turno)
       .execute('InsertTurnosDisponibles');
 
-    return res.status(201).json({
-      success: 'Turno disponible ingresado correctamente',
-    });
+    res.status(201).json({ success: 'Turno disponible ingresado correctamente' });
 
   } catch (error) {
     console.error('Error en insertTurnosDisp:', error);
-
-    // 🔹 Diferenciar errores de SQL de errores inesperados
-    if (error.number) {
-      // error.number es propio de MSSQL
-      return res.status(500).json({ error: `Error de base de datos: ${error.message}` });
-    } else {
-      return res.status(500).json({ error: `Error inesperado: ${error.message}` });
-    }
+    res.status(500).json({ error: 'Error interno del servidor' });
   }
 };
+
 
 
 exports.getRangos = async (req, res) => {
