@@ -1,26 +1,14 @@
-const {connectDB} = require('../config/db');
+const { connectDB } = require('../config/db');
 const sql = require('mssql');
+const { enviarWhatsAppTurno } = require('./enviarTurnoPorWhatsapp');
 
+// Función para asignar turno
 exports.asignarTurno = async (req, res) => {
   try {
     const { id_paciente, id_turno, id_obra_social } = req.body;
 
-    // Validar campos obligatorios
-    if (
-      id_paciente === undefined ||
-      id_turno === undefined ||
-      id_obra_social === undefined
-    ) {
+    if (!id_paciente || !id_turno || !id_obra_social) {
       return res.status(400).json({ error: 'Faltan campos obligatorios' });
-    }
-
-    // Validar tipos
-    if (
-      typeof id_paciente !== 'number' ||
-      typeof id_turno !== 'number' ||
-      typeof id_obra_social !== 'number'
-    ) {
-      return res.status(400).json({ error: 'Los campos deben ser números' });
     }
 
     const pool = await connectDB();
@@ -43,39 +31,86 @@ exports.asignarTurno = async (req, res) => {
       return res.status(409).json({ error: 'El turno no está disponible' });
     }
 
-    // Ejecutar el stored procedure
+    // Asignar turno
     await pool.request()
       .input('id_turno', sql.Int, id_turno)
       .input('id_paciente', sql.Int, id_paciente)
       .input('id_obra_social', sql.Int, id_obra_social)
       .execute('AsignarTurno');
 
-    return res.status(200).json({ message: 'Turno asignado correctamente' });
+    // Obtener datos del paciente
+    const paciente = await pool.request()
+      .input('id_paciente', sql.Int, id_paciente)
+      .execute('obtenerDatosUsuario');
+
+    const tPaciente = paciente.recordset[0];
+    if (!tPaciente) {
+      return res.status(500).json({ error: 'No se pudieron obtener los datos del paciente' });
+    }
+
+    // Obtener datos del turno
+    const datosTurno = await pool.request()
+      .input('id_turno', sql.Int, id_turno)
+      .execute('DatosDelTurno');
+
+    const t = datosTurno.recordset[0];
+
+    // Mensaje WhatsApp
+    const mensaje = `✅ Turno confirmado!
+    📌 Paciente: ${tPaciente.nombres} ${tPaciente.apellido}
+    👨‍⚕️ Médico: ${t.medicoNombre} ${t.medicoApellido}
+    🩺 Especialidad: ${t.especialidadNombre}
+    📅 Fecha: ${t.fecha_turno}
+    ⏰ Horario: ${t.hora_inicio} - ${t.hora_fin}
+    Gracias por confiar en nuestro sanatorio.`;
+
+    // Enviar WhatsApp
+    enviarWhatsAppTurno(tPaciente.telefono, mensaje)
+      .catch(err => console.error('Error al enviar WhatsApp:', err));
+
+    return res.status(200).json({ message: '✅ Turno asignado y WhatsApp enviado' });
 
   } catch (error) {
-    console.error('Error al asignar turno:', error);
+    console.error('❌ Error al asignar turno:', error);
     return res.status(500).json({ error: 'Error del servidor al asignar turno' });
   }
 };
+
 
 // Próximos turnos
 exports.getTurnos = async (req, res) => {
   try {
     const { id_paciente } = req.params;
-    if (!id_paciente) return res.status(400).json({ error: "Falta id_paciente" });
+
+    // 1️⃣ Validación de parámetro
+    if (!id_paciente || isNaN(Number(id_paciente))) {
+      return res.status(400).json({ error: "Falta o es inválido el id_paciente" });
+    }
 
     const pool = await connectDB();
+
+    // 2️⃣ Verificamos si el paciente existe
+    const pacienteResult = await pool.request()
+      .input("id_paciente", sql.Int, Number(id_paciente))
+      .query("SELECT COUNT(*) AS count FROM Pacientes WHERE id_paciente = @id_paciente");
+
+    if (pacienteResult.recordset[0].count === 0) {
+      return res.status(401).json({ error: "Paciente no encontrado" });
+    }
+
+    // 3️⃣ Obtenemos los próximos turnos
     const result = await pool.request()
       .input("id_paciente", sql.Int, Number(id_paciente))
       .execute("MisProximosTurnos");
 
-    // Siempre devolvemos array, aunque esté vacío
-    res.json({ turnos: result.recordset || [] });
+    res.status(200).json({ turnos: result.recordset || [] });
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Error al obtener los turnos" });
   }
 };
+
 
 // Historial de turnos
 exports.historialTurnosPac = async (req, res) => {
@@ -111,7 +146,7 @@ exports.historialTurnosMed = async (req, res) => {
       .input('id_medico', sql.Int, id)
       .execute('HistorialTurnosMedico');
 
-    // Devuelve directamente el recordset como array
+    console.log("Datos de la SP:", result.recordset); // <--- verifica qué devuelve
     return res.status(200).json(result.recordset);
 
   } catch (error) {
@@ -212,5 +247,70 @@ exports.obtenerObraSocial = async (req, res) => {
   } catch (error) {
     console.error("Error al obtener la obra social:", error);
     return res.status(500).json({ error: "Hubo un error en el servidor al obtener la obra social" });
+  }
+};
+
+exports.insertTurnosDisp = async (req, res) => {
+  const { id_medico, id_rango, fecha_turno } = req.body;
+
+  // 🔹 Validación de datos faltantes
+  if (!id_medico) {
+    return res.status(400).json({ error: 'Falta el ID del médico' });
+  }
+  if (!id_rango) {
+    return res.status(400).json({ error: 'Falta el rango horario' });
+  }
+  if (!fecha_turno) {
+    return res.status(400).json({ error: 'Falta la fecha del turno' });
+  }
+
+  try {
+    const pool = await connectDB();
+
+    // 🔹 Verificar si ya existe un turno con la misma fecha y rango
+    const result = await pool.request()
+      .input('id_medico', sql.Int, id_medico)
+      .input('id_rango', sql.Int, id_rango)
+      .input('fecha_turno', sql.Date, fecha_turno)
+      .execute(`checkDobleTurno`);
+
+    if (result.recordset[0].cantidad > 0) {
+      return res.status(409).json({ error: 'Ya existe un turno disponible para ese horario y fecha' });
+    }
+
+    // 🔹 Insertar el nuevo turno si no existe
+    await pool.request()
+      .input('id_medico', sql.Int, id_medico)
+      .input('id_rango', sql.Int, id_rango)
+      .input('fecha_turno', sql.Date, fecha_turno)
+      .execute('InsertTurnosDisponibles');
+
+    return res.status(201).json({
+      success: 'Turno disponible ingresado correctamente',
+    });
+
+  } catch (error) {
+    console.error('Error en insertTurnosDisp:', error);
+
+    // 🔹 Diferenciar errores de SQL de errores inesperados
+    if (error.number) {
+      // error.number es propio de MSSQL
+      return res.status(500).json({ error: `Error de base de datos: ${error.message}` });
+    } else {
+      return res.status(500).json({ error: `Error inesperado: ${error.message}` });
+    }
+  }
+};
+
+
+exports.getRangos = async (req, res) => {
+  try {
+    const pool = await connectDB();
+    const result = await pool.request().execute('GetRangos');
+
+    return res.status(200).json(result.recordset);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Error al obtener los rangos' });
   }
 };

@@ -336,3 +336,22 @@ exports.actualizarPerfil = async (req, res) => {
     res.status(500).json({ error: "No se pudo actualizar el perfil" });
   }
 };
+
+
+exports.buscarPacientesPorTexto = async (req, res) => {
+  const { texto } = req.query;
+  if (!texto) return res.status(400).json({ error: "Debes enviar un texto para buscar" });
+
+  try {
+    const pool = await connectDB();
+    const result = await pool.request()
+      .input('texto', texto)
+      .execute("BuscarPacientePorTexto");
+
+    res.json(result.recordset);
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al buscar pacientes" });
+  }
+};
