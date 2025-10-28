@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        NODEJS_HOME = '/usr/local/bin/node' // si usas NodeJS global, opcional
+        NODEJS_HOME = '/usr/local/bin/node' // opcional si usas Node global
     }
 
     stages {
@@ -24,9 +24,9 @@ pipeline {
             }
         }
 
-        stage('Start Server') {
+        stage('Run Tests') {
             steps {
-                // Inyectar las credenciales y generar .env
+                // Inyectar credenciales necesarias para los tests
                 withCredentials([
                     usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER', passwordVariable: 'DB_PASSWORD'),
                     string(credentialsId: 'twilio-sid', variable: 'TWILIO_ACCOUNT_SID'),
@@ -45,7 +45,7 @@ pipeline {
                         echo "TWILIO_AUTH_TOKEN=$TWILIO_AUTH_TOKEN" >> .env
                         echo "TWILIO_WHATSAPP_FROM=$TWILIO_WHATSAPP_FROM" >> .env
 
-                        npm run start
+                        npm test
                     '''
                 }
             }

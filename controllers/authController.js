@@ -82,7 +82,7 @@ exports.loginUser = async (req, res) => {
 
     const result = await pool
       .request()
-      .input('usernamee', sql.VarChar, username)
+      .input('username', sql.VarChar, username)
       .execute('getUserByUsername');
 
     const user = result.recordset[0];
