@@ -5,7 +5,6 @@ const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'tu_clave_secreta_aqui';
 
-"te amooooooow233eee"
 
 // REGISTRO DE USUARIO
 exports.registerUser = async (req, res) => {
@@ -83,7 +82,7 @@ exports.loginUser = async (req, res) => {
 
     const result = await pool
       .request()
-      .input('username', sql.VarChar, username)
+      .input('usernamee', sql.VarChar, username)
       .execute('getUserByUsername');
 
     const user = result.recordset[0];
