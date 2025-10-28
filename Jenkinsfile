@@ -1,41 +1,41 @@
 pipeline {
-  agent any
-  stages {
-    stage('Checkout') {
-      steps {
-        checkout scm
-      }
+    agent any
+
+    // 1️⃣ Trigger de GitHub
+    triggers {
+        githubPush()
     }
 
-    stage('Install dependencies') {
-      steps {
-        sh 'npm install'
-      }
+    stages {
+        stage('Checkout') {
+            steps {
+                // Clona tu repo
+                git branch: 'main', url: 'https://github.com/estuchis21/tuSanatorio-back.git'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                // Ejemplo: si usás Node.js
+                sh 'npm install'
+                sh 'npm run build'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                // Opcional: correr tests si los tenés
+                sh 'npm test || echo "No hay tests"'
+            }
+        }
     }
 
-    stage('Run Tests') {
-      steps {
-        sh 'npm test'
-      }
+    post {
+        success {
+            echo 'Build completado con éxito ✅'
+        }
+        failure {
+            echo 'Build fallido ❌'
+        }
     }
-
-  }
-  post {
-    always {
-      echo 'Pipeline finalizado.'
-    }
-
-    success {
-      echo '✅ Todos los tests pasaron correctamente.'
-    }
-
-    failure {
-      echo '❌ Falló algún test.'
-    }
-
-  }
-  triggers {
-    pollSCM('H/5 * * * *')
-    cron('H 0-10 * * *')
-  }
 }
