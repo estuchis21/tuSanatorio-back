@@ -1,25 +1,21 @@
 pipeline {
-    agent {
-        docker {
-            image 'node:18'         // Imagen oficial de Node.js 18 con npm
-            args '-u root:root'     // Para evitar problemas de permisos dentro del contenedor
-        }
-    }
-
-    // 1️⃣ Trigger de GitHub
-    triggers {
-        githubPush()
-    }
+    agent any  // Se ejecuta en el contenedor de Jenkins directamente
 
     environment {
-        CI = 'true'               // Variable útil para algunos paquetes npm
+        CI = 'true'  // Para que npm detecte entorno de CI
+    }
+
+    triggers {
+        githubPush()  // Se ejecuta al hacer push en GitHub
     }
 
     stages {
         stage('Checkout') {
             steps {
-                // Clona tu repo
-                git branch: 'main', url: 'https://github.com/estuchis21/tuSanatorio-back.git', credentialsId: 'github-jenkins'
+                echo 'Clonando repositorio...'
+                git branch: 'main', 
+                    url: 'https://github.com/estuchis21/tuSanatorio-back.git',
+                    credentialsId: 'github-jenkins'
             }
         }
 
