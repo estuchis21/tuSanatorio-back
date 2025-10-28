@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'tu_clave_secreta_aqui';
 
-"te amooooooo"
+"te amooooooow233"
 
 // REGISTRO DE USUARIO
 exports.registerUser = async (req, res) => {
