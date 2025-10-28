@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        NODEJS_HOME = '/usr/local/bin/node' // opcional si usas Node global
+        NODEJS_HOME = '/usr/local/bin/node' // opcional si NodeJS es global
     }
 
     stages {
@@ -26,7 +26,6 @@ pipeline {
 
         stage('Run Tests') {
             steps {
-                // Inyectar credenciales necesarias para los tests
                 withCredentials([
                     usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER', passwordVariable: 'DB_PASSWORD'),
                     string(credentialsId: 'twilio-sid', variable: 'TWILIO_ACCOUNT_SID'),
@@ -34,6 +33,7 @@ pipeline {
                     string(credentialsId: 'twilio-whatsapp', variable: 'TWILIO_WHATSAPP_FROM')
                 ]) {
                     sh '''
+                        # Generar .env dinámico
                         echo "DB_SERVER=host.docker.internal" > .env
                         echo "DB_DATABASE=tuSanatorio" >> .env
                         echo "DB_USER=$DB_USER" >> .env
@@ -45,7 +45,8 @@ pipeline {
                         echo "TWILIO_AUTH_TOKEN=$TWILIO_AUTH_TOKEN" >> .env
                         echo "TWILIO_WHATSAPP_FROM=$TWILIO_WHATSAPP_FROM" >> .env
 
-                        npm test
+                        # Ejecutar tests con npx para no depender de instalación global
+                        npx jest --runInBand
                     '''
                 }
             }
