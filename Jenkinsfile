@@ -1,11 +1,5 @@
 pipeline {
-    agent {
-        dockerfile {
-            filename 'Dockerfile' // tu Dockerfile en el repo
-            dir '.'              // directorio donde está tu Dockerfile
-            args '-u root:root'  // opcional, para permisos de root
-        }
-    }
+    agent any
     environment {
         CI = 'true'
     }
@@ -16,13 +10,19 @@ pipeline {
             }
         }
         stage('Install Dependencies') {
-            steps { sh 'npm install' }
+            steps {
+                sh 'npm install'
+            }
         }
         stage('Build') {
-            steps { sh 'npm run build' }
+            steps {
+                sh 'npm run build'
+            }
         }
         stage('Test') {
-            steps { sh 'npm test || echo "No hay tests configurados"' }
+            steps {
+                sh 'npm test || echo "No hay tests configurados"'
+            }
         }
     }
 }
