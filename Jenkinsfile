@@ -1,6 +1,10 @@
 pipeline {
     agent any
 
+    tools {
+        nodejs 'Node20' // El nombre que le pusiste en "Global Tool Configuration" de Jenkins
+    }
+
     stages {
         stage('Checkout Repository') {
             steps {
@@ -16,13 +20,12 @@ pipeline {
 
         stage('Install Dependencies') {
             steps {
-                sh 'npm install'
+                sh 'npm ci'
             }
         }
 
         stage('Set Environment for Tests') {
             steps {
-                // Variables dummy para simular conexión
                 sh '''
                     echo "DB_SERVER=localhost" > .env
                     echo "DB_DATABASE=tuSanatorio" >> .env
@@ -41,10 +44,8 @@ pipeline {
         stage('Run Tests') {
             steps {
                 sh '''
-                    # Dar permisos al binario local de Jest
-                    chmod +x ./node_modules/.bin/jest
-                    # Ejecutar Jest simulando que todo pasa
-                    npx jest --runInBand --silent || true
+                    rm -rf node_modules/.cache/babel-loader
+                    npx jest --runInBand
                 '''
             }
         }
@@ -52,7 +53,7 @@ pipeline {
 
     post {
         always {
-            sh 'rm -f .env' // limpiar variables por seguridad
+            sh 'rm -f .env'
         }
         success {
             echo "✅ Tests completed successfully!"
