@@ -1,31 +1,26 @@
-// controllers/turnosController.js
-const { connectDB } = require('../config/db');
-const sql = require('mssql');
-const twilio = require('twilio');
 require('dotenv').config();
+const twilio = require('twilio');
 
-// Configuración Twilio Sandbox
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-const TWILIO_WHATSAPP_FROM = 'whatsapp:+14155238886'; // Sandbox
+const FROM = process.env.TWILIO_WHATSAPP_FROM;
 
 /**
- * Envía WhatsApp usando Twilio Sandbox
- * @param {string} telefono - número del paciente (solo números)
+ * Envía WhatsApp desde Twilio Sandbox
+ * @param {string} telefono - número sin +54 ni 9, ejemplo: 1112345678
  * @param {string} mensaje - texto a enviar
  */
-exports.enviarWhatsAppTurno = async (telefono, mensaje) => {
+const enviarWhatsApp = async (telefono, mensaje) => {
   try {
-    // No agregamos +54 ni 9, usamos tal cual
-    const telefonoFormateado = `whatsapp:+549${telefono}`;
-
-    await client.messages.create({
-      from: TWILIO_WHATSAPP_FROM,
-      to: telefonoFormateado,
+    const to = `whatsapp:+549${telefono}`; // formato Argentina
+    const message = await client.messages.create({
+      from: FROM,
+      to,
       body: mensaje,
     });
-
-    console.log('✅ WhatsApp enviado a', telefonoFormateado);
+    console.log('✅ WhatsApp enviado:', message.sid);
   } catch (error) {
     console.error('❌ Error al enviar WhatsApp:', error);
   }
 };
+
+module.exports = { enviarWhatsApp };

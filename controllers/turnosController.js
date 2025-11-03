@@ -1,6 +1,6 @@
 const { connectDB } = require('../config/db');
 const sql = require('mssql');
-const { enviarWhatsAppTurno } = require('./enviarTurnoPorWhatsapp');
+const { enviarWhatsApp } = require('./enviarTurnoPorWhatsapp');
 
 // Función para asignar turno
 exports.asignarTurno = async (req, res) => {
@@ -65,7 +65,7 @@ exports.asignarTurno = async (req, res) => {
     Gracias por confiar en nuestro sanatorio.`;
 
     // Enviar WhatsApp
-    enviarWhatsAppTurno(tPaciente.telefono, mensaje)
+    enviarWhatsApp(tPaciente.telefono, mensaje)
       .catch(err => console.error('Error al enviar WhatsApp:', err));
 
     return res.status(200).json({ message: '✅ Turno asignado y WhatsApp enviado' });
@@ -92,7 +92,7 @@ exports.getTurnos = async (req, res) => {
     // 2️⃣ Verificamos si el paciente existe
     const pacienteResult = await pool.request()
       .input("id_paciente", sql.Int, Number(id_paciente))
-      .query("SELECT COUNT(*) AS count FROM Pacientes WHERE id_paciente = @id_paciente");
+      .execute("ExistePaciente");
 
     if (pacienteResult.recordset[0].count === 0) {
       return res.status(401).json({ error: "Paciente no encontrado" });
@@ -300,3 +300,30 @@ exports.getRangos = async (req, res) => {
     return res.status(500).json({ error: 'Error al obtener los rangos' });
   }
 };
+
+exports.modificarTurno = async (req, res) => {
+  try {
+    const { id_turno_asignado, id_nuevo_turno, id_paciente, id_obra_social } = req.body;
+
+    if (!id_turno_asignado || !id_nuevo_turno || !id_paciente || !id_obra_social) {
+      return res.status(400).json({ error: 'Faltan datos para modificar el turno' });
+    }
+
+    const pool = await connectDB();
+
+    // Ejecutar SP
+    await pool.request()
+      .input('id_turno_asignado', sql.Int, id_turno_asignado)
+      .input('id_nuevo_turno', sql.Int, id_nuevo_turno)
+      .input('id_paciente', sql.Int, id_paciente)
+      .input('id_obra_social', sql.Int, id_obra_social)
+      .execute('ModificarTurno');
+
+    return res.status(200).json({ message: 'Turno modificado correctamente' });
+
+  } catch (error) {
+    console.error('❌ Error al modificar turno:', error);
+    return res.status(500).json({ error: 'Error del servidor al modificar turno' });
+  }
+};
+

@@ -108,7 +108,7 @@ exports.loginUser = async (req, res) => {
 
     delete user.contrasena;
 
-    return res.status(200).json({ token, user }); // 👈 agregá esto
+    return res.status(200).json({ token, user });
 
 
   } catch (error) {
@@ -240,7 +240,7 @@ exports.getPacienteByUsuarioId = async (req, res) => {
 
     const result = await pool.request()
       .input('id_usuario', sql.Int, Number(id_usuario))
-      .query('SELECT id_paciente FROM Pacientes WHERE id_usuario = @id_usuario');
+      .execute('verPacientePorIdUsuario');
 
     if (result.recordset.length === 0) {
       return res.status(404).json({ error: 'Paciente no encontrado para ese usuario' });
@@ -253,7 +253,6 @@ exports.getPacienteByUsuarioId = async (req, res) => {
   }
 };
 
-// (Opcional) Obtener id_medico según id_usuario
 exports.getMedicoByUsuarioId = async (req, res) => {
   try {
     const { id_usuario } = req.params;
@@ -266,7 +265,7 @@ exports.getMedicoByUsuarioId = async (req, res) => {
 
     const result = await pool.request()
       .input('id_usuario', sql.Int, Number(id_usuario))
-      .query('SELECT id_medico FROM Medicos WHERE id_usuario = @id_usuario');
+      .execute('verMedicoPorIdUsuario');
 
     if (result.recordset.length === 0) {
       return res.status(404).json({ error: 'Médico no encontrado para ese usuario' });

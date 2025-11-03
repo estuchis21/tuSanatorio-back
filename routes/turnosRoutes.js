@@ -14,6 +14,7 @@ router.get('/getTurnosDisponibles/:id_medico/:id_especialidad', turnosController
 router.get('/getObrasSociales', turnosController.obtenerObraSocial);
 router.post('/insertTurnosDisp', turnosController.insertTurnosDisp);
 router.get('/getRangos', turnosController.getRangos);
+router.put('/modificarTurno', turnosController.modificarTurno);
 
 
 module.exports = router;
