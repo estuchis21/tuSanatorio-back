@@ -104,6 +104,8 @@ exports.loginUser = async (req, res) => {
       username: user.username
     };
 
+    console.log(payload)
+
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
 
     delete user.contrasena;
