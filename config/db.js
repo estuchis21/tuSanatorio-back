@@ -11,6 +11,11 @@ const config = {
     ? parseInt(process.env.DB_PORT, 10)
     : 5432,
 
+  // SSL necesario para conectarse a Neon desde Render
+  ssl: {
+    rejectUnauthorized: false
+  },
+
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000
@@ -71,3 +76,4 @@ module.exports = {
   pool,
   connectDB
 };
+
