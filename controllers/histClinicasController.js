@@ -1,123 +1,260 @@
-const sql = require('mssql');
-const {connectDB} = require('../config/db');
+const { pool } = require('../config/db');
 
-// Insertar historia clínica con detalle usando DNI
-exports.insertarHistoriaPorDNI = async (req, res) => {
-  const { dni, id_medico, historia_clinica } = req.body;
 
-  if (!dni || !id_medico || !historia_clinica) {
+// =====================================================
+// HELPER
+// =====================================================
+
+const ejecutarProcedure = async (
+  client,
+  nombreProcedure,
+  parametros = []
+) => {
+  const cursor = `cur_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+
+  const placeholders = parametros
+    .map((_, index) => `$${index + 1}`)
+    .join(', ');
+
+  const sql = placeholders
+    ? `CALL "${nombreProcedure}"(${placeholders}, '${cursor}')`
+    : `CALL "${nombreProcedure}"('${cursor}')`;
+
+  await client.query(sql, parametros);
+
+  const result = await client.query(
+    `FETCH ALL FROM "${cursor}"`
+  );
+
+  return result.rows;
+};
+
+
+// =====================================================
+// INSERTAR HISTORIA POR DNI
+// =====================================================
+
+const insertarHistoriaPorDNI = async (req, res) => {
+  const {
+    dni,
+    id_medico,
+    historia_clinica
+  } = req.body;
+
+  if (
+    dni === undefined ||
+    id_medico === undefined ||
+    !historia_clinica
+  ) {
     return res.status(400).json({
-      success: false,
-      mensaje: "Faltan parámetros requeridos: dni, id_medico o historia_clinica"
+      error:
+        'DNI, médico e historia clínica son obligatorios'
     });
   }
 
+  const client = await pool.connect();
+
   try {
-    const pool = await connectDB();
 
-    // 1️⃣ Obtener id_paciente desde el DNI
-    const pacienteResult = await pool.request()
-      .input('dni', sql.NVarChar(50), dni)
-      .execute('sp_GetPacienteByDNI');
+    // -----------------------------------------------
+    // Buscar paciente
+    // -----------------------------------------------
 
-    const paciente = pacienteResult.recordset[0];
-    if (!paciente) {
+    await client.query('BEGIN');
+
+    const pacientes = await ejecutarProcedure(
+      client,
+      'sp_GetPacienteByDNI',
+      [dni]
+    );
+
+    await client.query('COMMIT');
+
+    if (!pacientes.length) {
       return res.status(404).json({
-        success: false,
-        mensaje: `No se encontró paciente con DNI ${dni}`
+        error: 'No existe un paciente con ese DNI'
       });
     }
 
-    // 2️⃣ Insertar historia clínica
-    const historiaResult = await pool.request()
-      .input('id_paciente', sql.Int, paciente.id_paciente)
-      .input('id_medico', sql.Int, id_medico)
-      .input('historia_clinica', sql.NVarChar(sql.MAX), historia_clinica)
-      .execute('insertarHistoriaConDetalle');
+    const paciente = pacientes[0];
 
-    res.status(200).json({
-      success: true,
-      mensaje: 'Historia clínica y detalle insertados correctamente',
-      id_historia_clinica: historiaResult.recordset[0]?.id_historia_clinica,
-      paciente: {
-        nombres: paciente.nombres,
-        apellido: paciente.apellido,
-        dni
-      }
+    const id_paciente =
+      paciente.id_paciente;
+
+    // -----------------------------------------------
+    // Crear historia clínica
+    // -----------------------------------------------
+
+    await client.query('BEGIN');
+
+    const resultado = await ejecutarProcedure(
+      client,
+      'insertarHistoriaConDetalle',
+      [
+        id_paciente,
+        id_medico,
+        historia_clinica
+      ]
+    );
+
+    await client.query('COMMIT');
+
+    return res.status(201).json({
+      message:
+        'Historia clínica registrada correctamente',
+      data: resultado
     });
 
   } catch (error) {
-    console.error('Error al insertar historia clínica con detalle:', error);
-    res.status(500).json({
-      success: false,
-      mensaje: error.message
+
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
+
+    console.error(
+      '❌ Error al insertar historia:',
+      error
+    );
+
+    return res.status(500).json({
+      error: 'Error al insertar historia clínica'
     });
+
+  } finally {
+    client.release();
   }
 };
 
 
-exports.getHistoriasPorDni = async (req, res) => {
+// =====================================================
+// HISTORIAS POR DNI
+// =====================================================
+
+const getHistoriasPorDni = async (req, res) => {
   const { dni } = req.params;
 
-  try {
-    const pool = await connectDB();
-    const result = await pool
-      .request()
-      .input('dni', sql.NVarChar(20), dni)
-      .execute('getHistoriasPorDniPaciente');
+  const client = await pool.connect();
 
-    res.status(200).json({
-      success: true,
-      historias: result.recordset
-    });
+  try {
+
+    await client.query('BEGIN');
+
+    const resultado = await ejecutarProcedure(
+      client,
+      'getHistoriasPorDniPaciente',
+      [dni]
+    );
+
+    await client.query('COMMIT');
+
+    return res.json(resultado);
+
   } catch (error) {
-    console.error('Error al obtener historias por DNI:', error);
-    res.status(500).json({
-      success: false,
-      mensaje: error.message || 'Error del servidor'
+
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
+
+    console.error(error);
+
+    return res.status(500).json({
+      error:
+        'Error al obtener historias clínicas'
     });
+
+  } finally {
+    client.release();
   }
 };
 
 
-// Obtener historias por paciente
-exports.getHistoriasPorPaciente = async (req, res) => {
+// =====================================================
+// HISTORIAS POR PACIENTE
+// =====================================================
+
+const getHistoriasPorPaciente = async (req, res) => {
   const { id_paciente } = req.params;
 
-  try {
-    const pool = await connectDB();
-    const result = await pool
-      .request()
-      .input('id_paciente', sql.Int, id_paciente)
-      .execute('getHistoriasPorPaciente');
+  const client = await pool.connect();
 
-    res.status(200).json({
-      success: true,
-      historias: result.recordset
-    });
+  try {
+
+    await client.query('BEGIN');
+
+    const resultado = await ejecutarProcedure(
+      client,
+      'getHistoriasPorPaciente',
+      [id_paciente]
+    );
+
+    await client.query('COMMIT');
+
+    return res.json(resultado);
+
   } catch (error) {
-    console.error('Error al obtener historias por paciente:', error);
-    res.status(500).json({ success: false, mensaje: error.message });
+
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
+
+    console.error(error);
+
+    return res.status(500).json({
+      error:
+        'Error al obtener historias del paciente'
+    });
+
+  } finally {
+    client.release();
   }
 };
 
-// Obtener historias por médico
-exports.getHistoriasPorMedico = async (req, res) => {
+
+// =====================================================
+// HISTORIAS POR MÉDICO
+// =====================================================
+
+const getHistoriasPorMedico = async (req, res) => {
   const { id_medico } = req.params;
 
-  try {
-    const pool = await connectDB();
-    const result = await pool
-      .request()
-      .input('id_medico', sql.Int, id_medico)
-      .execute('getHistoriasPorMedico');
+  const client = await pool.connect();
 
-    res.status(200).json({
-      success: true,
-      historias: result.recordset
-    });
+  try {
+
+    await client.query('BEGIN');
+
+    const resultado = await ejecutarProcedure(
+      client,
+      'getHistoriasPorMedico',
+      [id_medico]
+    );
+
+    await client.query('COMMIT');
+
+    return res.json(resultado);
+
   } catch (error) {
-    console.error('Error al obtener historias por médico:', error);
-    res.status(500).json({ success: false, mensaje: error.message });
+
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
+
+    console.error(error);
+
+    return res.status(500).json({
+      error:
+        'Error al obtener historias del médico'
+    });
+
+  } finally {
+    client.release();
   }
+};
+
+
+module.exports = {
+  insertarHistoriaPorDNI,
+  getHistoriasPorDni,
+  getHistoriasPorPaciente,
+  getHistoriasPorMedico
 };

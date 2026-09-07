@@ -1,39 +1,73 @@
 require('dotenv').config();
-const sql = require('mssql');
+
+const { Pool } = require('pg');
 
 const config = {
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  server: process.env.DB_SERVER,
+  host: process.env.DB_SERVER,
   database: process.env.DB_DATABASE,
-  port: process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : 1433,
-  options: {
-    encrypt: process.env.DB_ENCRYPT === 'true',
-    trustServerCertificate: process.env.DB_TRUST_CERT === 'true'
-  }
+  port: process.env.DB_PORT
+    ? parseInt(process.env.DB_PORT, 10)
+    : 5432,
+
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000
 };
 
-// Validación simple
-for (const key of ['DB_USER', 'DB_PASSWORD', 'DB_SERVER', 'DB_DATABASE']) {
-  if (!process.env[key]) {
-    console.warn(`⚠️  Variable de entorno ${key} no definida`);
+const requiredVariables = [
+  'DB_USER',
+  'DB_PASSWORD',
+  'DB_SERVER',
+  'DB_DATABASE'
+];
+
+for (const variable of requiredVariables) {
+  if (!process.env[variable]) {
+    console.warn(`⚠️ Variable de entorno ${variable} no definida`);
   }
 }
 
+const pool = new Pool(config);
+
+pool.on('error', (err) => {
+  console.error(
+    '❌ Error inesperado en el pool de PostgreSQL:',
+    err.message
+  );
+});
+
 const connectDB = async () => {
   try {
-    const pool = await sql.connect(config);
-    console.log('✅ Conectado a la base de datos');
+    const client = await pool.connect();
+
+    console.log('✅ Conectado a PostgreSQL');
+    console.log('📊 Base de datos:', config.database);
+    console.log('🖥️ Servidor:', config.host);
+    console.log('🔌 Puerto:', config.port);
+
+    client.release();
+
     return pool;
   } catch (err) {
-    console.error('❌ Error de conexión a la base de datos:', err.message);
+    console.error(
+      '❌ Error de conexión a PostgreSQL:',
+      err.message
+    );
+
     console.log('Configuración usada:', {
-      server: config.server,
+      host: config.host,
       database: config.database,
-      port: config.port
+      port: config.port,
+      user: config.user
     });
-    process.exit(1); // termina el contenedor si falla la conexión
+
+    process.exit(1);
   }
 };
 
-module.exports = { connectDB };
+module.exports = {
+  pool,
+  connectDB
+};

@@ -1,14 +1,204 @@
 const bcrypt = require('bcrypt');
-const { connectDB } = require('../config/db');
-const sql = require('mssql');
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'tu_clave_secreta_aqui';
+const { pool } = require('../config/db');
 
 
-// REGISTRO DE USUARIO
-exports.registerUser = async (req, res) => {
+// =====================================================
+// EJECUTAR PROCEDURE CON REFCURSOR
+// =====================================================
+
+const ejecutarProcedure = async (
+  nombreProcedure,
+  parametros = []
+) => {
+
+  const client = await pool.connect();
+
   try {
+
+    await client.query('BEGIN');
+
+    const placeholders = parametros
+      .map((_, index) => `$${index + 1}`)
+      .join(', ');
+
+    const argumentos = placeholders
+      ? `${placeholders}, 'cur'`
+      : `'cur'`;
+
+    console.log(
+      `🔹 Ejecutando procedure: ${nombreProcedure}`
+    );
+
+    await client.query(
+      `CALL ${nombreProcedure}(${argumentos})`,
+      parametros
+    );
+
+    const result = await client.query(
+      'FETCH ALL FROM cur'
+    );
+
+    await client.query('COMMIT');
+
+    return result.rows;
+
+  } catch (error) {
+
+    await client.query('ROLLBACK');
+
+    console.error(
+      `❌ Error ejecutando ${nombreProcedure}:`,
+      error
+    );
+
+    throw error;
+
+  } finally {
+
+    client.release();
+
+  }
+};
+
+const ejecutarProcedureSinCursor = async (
+  nombreProcedure,
+  parametros = []
+) => {
+
+  const client = await pool.connect();
+
+  try {
+
+    await client.query('BEGIN');
+
+    const placeholders = parametros
+      .map((_, index) => `$${index + 1}`)
+      .join(', ');
+
+    console.log(
+      `🔹 Ejecutando procedure sin cursor: ${nombreProcedure}`
+    );
+
+    await client.query(
+      `CALL ${nombreProcedure}(${placeholders})`,
+      parametros
+    );
+
+    await client.query('COMMIT');
+
+    return true;
+
+  } catch (error) {
+
+    await client.query('ROLLBACK');
+
+    console.error(
+      `❌ Error ejecutando ${nombreProcedure}:`,
+      error
+    );
+
+    throw error;
+
+  } finally {
+
+    client.release();
+
+  }
+};
+
+
+// =====================================================
+// LOGIN
+// =====================================================
+
+const loginUser = async (req, res) => {
+  try {
+    const {
+      username,
+      contrasena
+    } = req.body;
+
+    if (!username || !contrasena) {
+      return res.status(400).json({
+        error: 'Username y contraseña son obligatorios'
+      });
+    }
+
+    const usuarios = await ejecutarProcedure(
+      'getuserbyusername',
+      [username]
+    );
+
+    if (!usuarios || usuarios.length === 0) {
+      return res.status(401).json({
+        error: 'Usuario o contraseña incorrectos'
+      });
+    }
+
+    const usuario = usuarios[0];
+
+    const passwordCorrecta = await bcrypt.compare(
+      contrasena,
+      usuario.contrasena
+    );
+
+    if (!passwordCorrecta) {
+      return res.status(401).json({
+        error: 'Usuario o contraseña incorrectos'
+      });
+    }
+
+    const token = jwt.sign(
+      {
+        id_usuario: usuario.id_usuario,
+        username: usuario.username,
+        id_rol: usuario.id_rol,
+        id_paciente: usuario.id_paciente || null
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: '8h'
+      }
+    );
+
+    // Nunca devolver la contraseña/hash al frontend
+    const {
+      contrasena: _contrasena,
+      ...usuarioSeguro
+    } = usuario;
+
+    return res.status(200).json({
+      message: 'Login exitoso',
+      token,
+      user: usuarioSeguro
+    });
+
+  } catch (error) {
+    console.error(
+      '❌ Error en loginUser:',
+      error
+    );
+
+    return res.status(500).json({
+      error: 'Error interno del servidor',
+      detail:
+        process.env.NODE_ENV === 'development'
+          ? error.message
+          : undefined
+    });
+  }
+};
+
+// =====================================================
+// REGISTRO
+// =====================================================
+
+const registerUser = async (req, res) => {
+
+  try {
+
     const {
       DNI,
       nombres,
@@ -18,342 +208,872 @@ exports.registerUser = async (req, res) => {
       telefono,
       contrasena,
       id_rol,
-      id_especialidad = null,
+      id_especialidad,
       id_obra_social
     } = req.body;
 
-    if (!DNI || !nombres || !apellido || !email || !username || !telefono || !contrasena || !id_rol || !id_obra_social) {
-      return res.status(400).json({ error: 'Faltan campos obligatorios' });
+
+    // =========================================================
+    // VALIDACIONES BÁSICAS
+    // =========================================================
+
+    if (
+      !DNI ||
+      !nombres ||
+      !apellido ||
+      !email ||
+      !username ||
+      !telefono ||
+      !contrasena ||
+      !id_rol
+    ) {
+
+      return res.status(400).json({
+        error: 'Faltan datos obligatorios'
+      });
+
     }
 
-    const pool = await connectDB();
 
-    // Verificar duplicados
-    const check = await pool.request()
-      .input('DNI', sql.BigInt, DNI)
-      .input('email', sql.VarChar, email)
-      .input('username', sql.VarChar, username)
-      .execute(`EXISTENTE`);
+    // =========================================================
+    // VALIDACIÓN DE ROL
+    // =========================================================
 
-    if (check.recordset.length > 0) {
-      const existente = check.recordset[0];
-      if (existente.DNI === DNI) return res.status(409).json({ error: 'DNI ya registrado' });
-      if (existente.email === email) return res.status(409).json({ error: 'Email ya registrado' });
-      if (existente.username === username) return res.status(409).json({ error: 'Username ya registrado' });
+    const rol = Number(id_rol);
+
+    if (rol !== 1 && rol !== 2) {
+
+      return res.status(400).json({
+        error: 'El rol debe ser 1 (Paciente) o 2 (Médico)'
+      });
+
     }
 
-    if (id_rol === 2 && !id_especialidad) {
-      return res.status(400).json({ error: 'Falta id_especialidad para médicos' });
+
+    // =========================================================
+    // ESPECIALIDAD
+    // PACIENTE  -> NULL
+    // MÉDICO    -> OBLIGATORIA
+    // =========================================================
+
+    let especialidad = null;
+
+    if (rol === 2) {
+
+      if (
+        id_especialidad === undefined ||
+        id_especialidad === null ||
+        id_especialidad === ''
+      ) {
+
+        return res.status(400).json({
+          error: 'Debe seleccionar una especialidad para el médico'
+        });
+
+      }
+
+      especialidad = Number(id_especialidad);
+
+      if (!Number.isInteger(especialidad)) {
+
+        return res.status(400).json({
+          error: 'La especialidad seleccionada no es válida'
+        });
+
+      }
+
     }
 
-    const hashedPassword = await bcrypt.hash(contrasena, 10);
 
-    await pool.request()
-      .input('DNI', sql.BigInt, DNI)
-      .input('nombres', sql.VarChar, nombres)
-      .input('apellido', sql.VarChar, apellido)
-      .input('email', sql.VarChar, email)
-      .input('username', sql.VarChar, username)
-      .input('telefono', sql.VarChar, telefono)
-      .input('contrasena', sql.VarChar, hashedPassword)
-      .input('id_rol', sql.Int, id_rol)
-      .input('id_especialidad', sql.Int, id_especialidad)
-      .input('id_obra_social', sql.Int, id_obra_social)
-      .execute('insertarUsuario');
+    // =========================================================
+    // OBRA SOCIAL
+    // PUEDE SER NULL
+    // =========================================================
 
-    res.status(201).json({ message: 'Usuario registrado correctamente' });
+    let obraSocial = null;
+
+    if (
+      id_obra_social !== undefined &&
+      id_obra_social !== null &&
+      id_obra_social !== ''
+    ) {
+
+      obraSocial = Number(id_obra_social);
+
+      if (!Number.isInteger(obraSocial)) {
+
+        return res.status(400).json({
+          error: 'La obra social seleccionada no es válida'
+        });
+
+      }
+
+    }
+
+
+    // =========================================================
+    // VERIFICAR SI YA EXISTE
+    // EXISTENTE RECIBE:
+    // DNI + EMAIL + USERNAME + CURSOR
+    // =========================================================
+
+    const existente = await ejecutarProcedure(
+      'EXISTENTE',
+      [
+        Number(DNI),
+        email,
+        username
+      ]
+    );
+
+
+    if (
+      existente &&
+      existente.length > 0
+    ) {
+
+      return res.status(409).json({
+
+        error:
+          'Ya existe un usuario con alguno de los datos ingresados'
+
+      });
+
+    }
+
+
+    // =========================================================
+    // HASH DE CONTRASEÑA
+    // =========================================================
+
+    const passwordHash =
+      await bcrypt.hash(
+        contrasena,
+        10
+      );
+
+
+    // =========================================================
+    // INSERTAR USUARIO
+    //
+    // PostgreSQL espera exactamente:
+    //
+    // 1  DNI
+    // 2  nombres
+    // 3  apellido
+    // 4  email
+    // 5  username
+    // 6  telefono
+    // 7  contrasena
+    // 8  id_rol
+    // 9  id_especialidad
+    // 10 id_obra_social
+    //
+    // NO lleva cursor.
+    // =========================================================
+
+    await ejecutarProcedureSinCursor(
+      'insertarusuario',
+      [
+        Number(DNI),
+        nombres,
+        apellido,
+        email,
+        username,
+        telefono,
+        passwordHash,
+        rol,
+        especialidad,
+        obraSocial
+      ]
+    );
+
+
+    // =========================================================
+    // OBTENER EL USUARIO RECIÉN CREADO
+    // =========================================================
+
+    const usuarios =
+      await ejecutarProcedure(
+        'getuserbyusername',
+        [username]
+      );
+
+
+    if (
+      !usuarios ||
+      usuarios.length === 0
+    ) {
+
+      return res.status(500).json({
+        error:
+          'El usuario fue creado pero no se pudo recuperar'
+      });
+
+    }
+
+
+    const usuario = usuarios[0];
+
+
+    // =========================================================
+    // RESPUESTA
+    // =========================================================
+
+    return res.status(201).json({
+
+      message: 'Usuario registrado correctamente',
+
+      user: {
+        id_usuario: usuario.id_usuario,
+        nombres: usuario.nombres,
+        apellido: usuario.apellido,
+        DNI: usuario.dni,
+        email: usuario.email,
+        username: usuario.username,
+        telefono: usuario.telefono,
+        id_rol: usuario.id_rol,
+        id_paciente: usuario.id_paciente || null
+      }
+
+    });
+
 
   } catch (error) {
-    console.error('Error en registerUser:', error);
-    res.status(500).json({ error: 'Error al registrar el usuario' });
+
+    console.error(
+      '❌ Error en registerUser:',
+      error
+    );
+
+
+    // =========================================================
+    // ERRORES DE CONSTRAINT DE POSTGRESQL
+    // =========================================================
+
+    if (error.code === '23505') {
+
+      return res.status(409).json({
+
+        error:
+          'Ya existe un usuario con alguno de los datos ingresados'
+
+      });
+
+    }
+
+
+    return res.status(500).json({
+
+      error:
+        'Error interno del servidor',
+
+      detail:
+        process.env.NODE_ENV === 'development'
+          ? error.message
+          : undefined
+
+    });
+
   }
+
 };
 
-// LOGIN DE USUARIO
-exports.loginUser = async (req, res) => {
-  try {
-    const { username, contrasena } = req.body;
+// =====================================================
+// OBTENER ESPECIALIDADES
+// =====================================================
 
-    if (!username || !contrasena) {
-      return res.status(400).json({ error: 'Faltan datos' });
-    }
-
-    const pool = await connectDB();
-
-    const result = await pool
-      .request()
-      .input('username', sql.VarChar, username)
-      .execute('getUserByUsername');
-
-    const user = result.recordset[0];
-
-    if (!user) {
-      return res.status(401).json({ error: 'Usuario no encontrado' });
-    }
-
-    const hashedPassword = user.contrasena;
-
-    const compare = await bcrypt.compare(contrasena, hashedPassword);
-
-    if (!compare) {
-      return res.status(401).json({ error: 'Contraseña incorrecta' });
-    }
-
-    const payload = {
-      id: user.id_usuario,
-      username: user.username
-    };
-
-    console.log(payload)
-
-    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
-
-    delete user.contrasena;
-
-    return res.status(200).json({ token, user });
-
-
-  } catch (error) {
-    console.error('Error en loginUser:', error);
-    return res.status(500).json({ error: 'Error al iniciar sesión' });
-  }
-};
-
-exports.getUsuarioById = async (req, res) => {
-  try {
-    const {id_usuario} = req.params;
-
-    const pool = await connectDB();
-
-    const result = await pool.request()
-      .input("id_usuario", sql.Int, id_usuario)
-      .execute("sp_GetUsuarioById");
-
-    // No usar res aquí
-    if (result.recordset.length === 0) return null;
-    
-    return res.status(200).json(result.recordset[0]);
-
-  } catch (error) {
-    console.error("Error al obtener usuario:", error);
-    throw error;
-  }
-};
-
-exports.getEspecialidades = async (req, res) => {
-  try {
-    const pool = await connectDB();
-    const result = await pool.request().execute("getEspecialidades");
-    const especialidades = result.recordset;
-
-    return res.status(200).json(especialidades);
-  } catch (error) {
-    console.error("Error al obtener especialidades:", error);
-    res.status(500).json({ message: "Error al obtener especialidades" });
-  }
-}
-
-exports.getEspecialidadesPorMedico = async (req, res) => {
-  const { id_medico } = req.params;
-
-  if (id_medico == null) {
-    return res.status(404).json({ error: "No existe tal médico en tal especialidad" });
-  }
+const getEspecialidades = async (req, res) => {
 
   try {
-    const pool = await connectDB();
-    const result = await pool.request()
-      .input('id_medico', sql.Int, id_medico)
-      .execute("getEspecialidadesPorMédico");
 
-    return res.status(200).json(result.recordset); // recordset es síncrono
-  } catch (error) {
-    console.error("Error al obtener especialidades por médico:", error);
-    return res.status(500).json({ message: "Error al obtener especialidades por médico." });
-  }
-};
+    const result =
+      await ejecutarProcedure(
+        'getEspecialidades'
+      );
 
 
-exports.getMedicosPorEspecialidad = async (req, res) => {
-  try {
-    const { id_especialidad } = req.params;
-
-    if (!id_especialidad || isNaN(Number(id_especialidad))) {
-      return res.status(400).json({ error: "Falta o es inválido el id_especialidad" });
-    }
-
-    const pool = await connectDB();
-
-    const result = await pool.request()
-      .input("id_especialidad", sql.Int, Number(id_especialidad))
-      .execute("MedicosPorEspecialidad");
-
-    if (!result.recordset || result.recordset.length === 0) {
-      return res.status(404).json({ error: "No se encontraron médicos para esa especialidad" });
-    }
-
-    res.json(result.recordset);
-  } catch (error) {
-    console.error("Error al obtener médicos por especialidad:", error);
-    res.status(500).json({ error: "Error al obtener médicos por especialidad" });
-  }
-};
-
-exports.getHorariosPorMedico = async (req, res) => {
-  try {
-    const { id_medico } = req.params;
-
-    if (!id_medico || isNaN(Number(id_medico))) {
-      return res.status(400).json({ error: "Falta o es inválido el id_medico" });
-    }
-
-    const pool = await connectDB();
-
-    const result = await pool.request()
-      .input("id_medico", sql.Int, Number(id_medico))
-      .execute("horariosPorMedico");
-
-    // Mapea los resultados para asegurar que hora_inicio y hora_fin existan
-    const horarios = (result.recordset || []).map(r => ({
-      hora_inicio: r.hora_inicio || null,
-      hora_fin: r.hora_fin || null
-    }));
-
-    res.json(horarios);
+    return res.status(200).json(
+      result
+    );
 
   } catch (error) {
-    console.error("Error al obtener horarios por médico:", error);
-    res.status(500).json({ error: "Error al obtener horarios por médico" });
-  }
-};
 
+    console.error(
+      '❌ Error getEspecialidades:',
+      error
+    );
 
+    return res.status(500).json({
 
-// Obtener id_paciente según id_usuario
-exports.getPacienteByUsuarioId = async (req, res) => {
-  try {
-    const { id_usuario } = req.params;
+      error:
+        'Error al obtener especialidades'
 
-    if (!id_usuario || isNaN(Number(id_usuario))) {
-      return res.status(400).json({ error: "Falta o es inválido el id_usuario" });
-    }
+    });
 
-    const pool = await connectDB();
-
-    const result = await pool.request()
-      .input('id_usuario', sql.Int, Number(id_usuario))
-      .execute('verPacientePorIdUsuario');
-
-    if (result.recordset.length === 0) {
-      return res.status(404).json({ error: 'Paciente no encontrado para ese usuario' });
-    }
-
-    res.json({ id_paciente: result.recordset[0].id_paciente });
-  } catch (error) {
-    console.error('Error en getPacienteByUsuarioId:', error);
-    res.status(500).json({ error: 'Error al obtener paciente' });
-  }
-};
-
-exports.getMedicoByUsuarioId = async (req, res) => {
-  try {
-    const { id_usuario } = req.params;
-
-    if (!id_usuario || isNaN(Number(id_usuario))) {
-      return res.status(400).json({ error: "Falta o es inválido el id_usuario" });
-    }
-
-    const pool = await connectDB();
-
-    const result = await pool.request()
-      .input('id_usuario', sql.Int, Number(id_usuario))
-      .execute('verMedicoPorIdUsuario');
-
-    if (result.recordset.length === 0) {
-      return res.status(404).json({ error: 'Médico no encontrado para ese usuario' });
-    }
-
-    res.json({ id_medico: result.recordset[0].id_medico });
-  } catch (error) {
-    console.error('Error en getMedicoByUsuarioId:', error);
-    res.status(500).json({ error: 'Error al obtener médico' });
-  }
-};
-
-exports.getObrasPorMedico = async (req, res) => {
-  const { id_medico } = req.params;
-
-  const idMedicoNum = parseInt(id_medico, 10);
-  if (isNaN(idMedicoNum)) {
-    return res.status(400).json({ error: 'id_medico debe ser un número válido' });
   }
 
-  try {
-    const pool = await connectDB();
-    const result = await pool.request()
-      .input('id_medico', sql.Int, idMedicoNum)
-      .execute('GetObrasSocialesPorMedico');
-
-    if (!result.recordset || result.recordset.length === 0) {
-      return res.status(404).json({ error: 'No hay registros disponibles' });
-    }
-
-    // Devolver todo el recordset como array
-    res.status(200).json({ obras_sociales: result.recordset });
-  } catch (error) {
-    console.error('Error al obtener obras sociales por médico:', error);
-    res.status(500).json({ error: 'Error al obtener obras sociales por médico' });
-  }
-};
-
-
-exports.actualizarPerfil = async (req, res) => {
-  try {
-    const { email, telefono, username, contrasena } = req.body;
-    const { id_usuario } = req.params;
-
-    const conexion = await connectDB();
-
-    const hashedPassword = await bcrypt.hash(contrasena, 10);
-
-
-    // Ejecutar procedimiento almacenado
-    await conexion.request()
-      .input("email", email || null)
-      .input("telefono", telefono || null)
-      .input("username", username || null)
-      .input("contrasena", hashedPassword)
-      .input("id_usuario", id_usuario)
-      .execute("actualizarPerfil");
-
-    res.status(200).json({ message: "Perfil actualizado correctamente" });
-  } catch (error) {
-    console.error("Error al actualizar perfil:", error);
-
-    // Manejo básico de duplicados
-    if (error.number === 2627) {
-      return res.status(400).json({ error: "El email o teléfono ya existe en otro usuario" });
-    }
-
-    res.status(500).json({ error: "No se pudo actualizar el perfil" });
-  }
 };
 
 
-exports.buscarPacientesPorTexto = async (req, res) => {
-  const { texto } = req.query;
-  if (!texto) return res.status(400).json({ error: "Debes enviar un texto para buscar" });
+// =====================================================
+// OBTENER PACIENTE POR USUARIO
+// =====================================================
+
+const getPacienteByUsuarioId = async (
+  req,
+  res
+) => {
 
   try {
-    const pool = await connectDB();
-    const result = await pool.request()
-      .input('texto', texto)
-      .execute("BuscarPacientePorTexto");
 
-    res.json(result.recordset);
+    const {
+      id_usuario
+    } = req.params;
+
+
+    const result =
+      await ejecutarProcedure(
+        'verPacientePorIdUsuario',
+        [
+          Number(id_usuario)
+        ]
+      );
+
+
+    return res.status(200).json(
+      result
+    );
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Error al buscar pacientes" });
+
+    console.error(
+      '❌ Error getPacienteByUsuarioId:',
+      error
+    );
+
+    return res.status(500).json({
+
+      error:
+        'Error al obtener paciente'
+
+    });
+
   }
+
+};
+
+
+// =====================================================
+// OBTENER MÉDICO POR USUARIO
+// =====================================================
+
+const getMedicoByUsuarioId = async (
+  req,
+  res
+) => {
+
+  try {
+
+    const {
+      id_usuario
+    } = req.params;
+
+
+    const result =
+      await ejecutarProcedure(
+        'verMedicoPorIdUsuario',
+        [
+          Number(id_usuario)
+        ]
+      );
+
+
+    return res.status(200).json(
+      result
+    );
+
+  } catch (error) {
+
+    console.error(
+      '❌ Error getMedicoByUsuarioId:',
+      error
+    );
+
+    return res.status(500).json({
+
+      error:
+        'Error al obtener médico'
+
+    });
+
+  }
+
+};
+
+
+// =====================================================
+// ESPECIALIDADES POR MÉDICO
+// =====================================================
+
+const getEspecialidadesPorMedico = async (
+  req,
+  res
+) => {
+
+  try {
+
+    const {
+      id_medico
+    } = req.params;
+
+
+    const result =
+      await ejecutarProcedure(
+        'getEspecialidadesPorMédico',
+        [
+          Number(id_medico)
+        ]
+      );
+
+
+    return res.status(200).json(
+      result
+    );
+
+  } catch (error) {
+
+    console.error(
+      '❌ Error getEspecialidadesPorMedico:',
+      error
+    );
+
+    return res.status(500).json({
+
+      error:
+        'Error al obtener especialidades del médico'
+
+    });
+
+  }
+
+};
+
+
+// =====================================================
+// MÉDICOS POR ESPECIALIDAD
+// =====================================================
+
+const getMedicosPorEspecialidad = async (
+  req,
+  res
+) => {
+
+  try {
+
+    const {
+      id_especialidad
+    } = req.params;
+
+
+    const result =
+      await ejecutarProcedure(
+        'MedicosPorEspecialidad',
+        [
+          Number(id_especialidad)
+        ]
+      );
+
+
+    return res.status(200).json(
+      result
+    );
+
+  } catch (error) {
+
+    console.error(
+      '❌ Error getMedicosPorEspecialidad:',
+      error
+    );
+
+    return res.status(500).json({
+
+      error:
+        'Error al obtener médicos por especialidad'
+
+    });
+
+  }
+
+};
+
+
+// =====================================================
+// HORARIOS POR MÉDICO
+// =====================================================
+
+const getHorariosPorMedico = async (
+  req,
+  res
+) => {
+
+  try {
+
+    const {
+      id_medico
+    } = req.params;
+
+
+    const result =
+      await ejecutarProcedure(
+        'horariosPorMedico',
+        [
+          Number(id_medico)
+        ]
+      );
+
+
+    return res.status(200).json(
+      result
+    );
+
+  } catch (error) {
+
+    console.error(
+      '❌ Error getHorariosPorMedico:',
+      error
+    );
+
+    return res.status(500).json({
+
+      error:
+        'Error al obtener horarios del médico'
+
+    });
+
+  }
+
+};
+
+
+// =====================================================
+// OBTENER USUARIO POR ID
+// =====================================================
+
+const getUsuarioById = async (
+  req,
+  res
+) => {
+
+  try {
+
+    const {
+      id_usuario
+    } = req.params;
+
+
+    const result =
+      await ejecutarProcedure(
+        'sp_GetUsuarioById',
+        [
+          Number(id_usuario)
+        ]
+      );
+
+
+    return res.status(200).json(
+      result
+    );
+
+  } catch (error) {
+
+    console.error(
+      '❌ Error getUsuarioById:',
+      error
+    );
+
+    return res.status(500).json({
+
+      error:
+        'Error al obtener usuario'
+
+    });
+
+  }
+
+};
+
+
+// =====================================================
+// OBRAS SOCIALES POR MÉDICO
+// =====================================================
+
+const getObrasPorMedico = async (
+  req,
+  res
+) => {
+
+  try {
+
+    const {
+      id_medico
+    } = req.params;
+
+
+    const result =
+      await ejecutarProcedure(
+        'GetObrasSocialesPorMedico',
+        [
+          Number(id_medico)
+        ]
+      );
+
+
+    return res.status(200).json(
+      result
+    );
+
+  } catch (error) {
+
+    console.error(
+      '❌ Error getObrasPorMedico:',
+      error
+    );
+
+    return res.status(500).json({
+
+      error:
+        'Error al obtener obras sociales del médico'
+
+    });
+
+  }
+
+};
+
+
+// =====================================================
+// OBRAS SOCIALES POR PACIENTE
+// =====================================================
+
+const getObrasPorPaciente = async (
+  req,
+  res
+) => {
+
+  try {
+
+    const {
+      id_paciente
+    } = req.params;
+
+
+    const result =
+      await ejecutarProcedure(
+        'GetObrasSocialesPorPaciente',
+        [
+          Number(id_paciente)
+        ]
+      );
+
+
+    return res.status(200).json(
+      result
+    );
+
+  } catch (error) {
+
+    console.error(
+      '❌ Error getObrasPorPaciente:',
+      error
+    );
+
+    return res.status(500).json({
+
+      error:
+        'Error al obtener obras sociales del paciente'
+
+    });
+
+  }
+
+};
+
+
+// =====================================================
+// ACTUALIZAR PERFIL
+// =====================================================
+
+const actualizarPerfil = async (
+  req,
+  res
+) => {
+
+  try {
+
+    const {
+      id_usuario
+    } = req.params;
+
+
+    const {
+      nombres,
+      apellido,
+      DNI,
+      email,
+      username,
+      telefono
+    } = req.body;
+
+
+    const result =
+      await ejecutarProcedure(
+        'actualizarPerfil',
+        [
+          Number(id_usuario),
+          DNI || null,
+          nombres || null,
+          apellido || null,
+          email || null,
+          username || null,
+          telefono || null
+        ]
+      );
+
+
+    return res.status(200).json({
+
+      message:
+        'Perfil actualizado correctamente',
+
+      data:
+        result
+
+    });
+
+  } catch (error) {
+
+    console.error(
+      '❌ Error actualizarPerfil:',
+      error
+    );
+
+
+    if (error.code === '23505') {
+
+      return res.status(409).json({
+
+        error:
+          'Uno de los datos ingresados ya está registrado'
+
+      });
+
+    }
+
+
+    return res.status(500).json({
+
+      error:
+        'Error al actualizar perfil'
+
+    });
+
+  }
+
+};
+
+
+
+// =====================================================
+// BUSCAR PACIENTES POR TEXTO
+// =====================================================
+
+const buscarPacientesPorTexto = async (
+  req,
+  res
+) => {
+
+  try {
+
+    const {
+      texto
+    } = req.query;
+
+
+    if (!texto) {
+
+      return res.status(400).json({
+
+        error:
+          'Debe ingresar un texto para buscar'
+
+      });
+
+    }
+
+
+    const result =
+      await ejecutarProcedure(
+        'BuscarPacientePorTexto',
+        [
+          texto
+        ]
+      );
+
+
+    return res.status(200).json(
+      result
+    );
+
+  } catch (error) {
+
+    console.error(
+      '❌ Error buscarPacientesPorTexto:',
+      error
+    );
+
+    return res.status(500).json({
+
+      error:
+        'Error al buscar pacientes'
+
+    });
+
+  }
+
+};
+
+
+// =====================================================
+// EXPORTS
+// =====================================================
+
+module.exports = {
+
+  loginUser,
+
+  registerUser,
+
+  getEspecialidades,
+
+  getPacienteByUsuarioId,
+
+  getMedicoByUsuarioId,
+
+  getEspecialidadesPorMedico,
+
+  getMedicosPorEspecialidad,
+
+  getHorariosPorMedico,
+
+  getUsuarioById,
+
+  getObrasPorMedico,
+
+  getObrasPorPaciente,
+
+  actualizarPerfil,
+
+  buscarPacientesPorTexto
+
 };

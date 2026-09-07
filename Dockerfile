@@ -1,18 +1,40 @@
-# tuSanatorio-back/Dockerfile
 FROM node:20-alpine
 
 WORKDIR /usr/src/app
 
+
+# =========================================================
+# DEPENDENCIAS
+# =========================================================
+
 COPY package*.json ./
 
-RUN npm install
+RUN npm ci --omit=dev
 
-# Instalar nodemon globalmente para desarrollo
-RUN npm install -g nodemon
+
+# =========================================================
+# CÓDIGO
+# =========================================================
 
 COPY . .
 
+
+# =========================================================
+# VARIABLES
+# =========================================================
+
+ENV NODE_ENV=production
+
+
+# =========================================================
+# PUERTO
+# =========================================================
+
 EXPOSE 3000
 
-# Usamos nodemon para que recargue automáticamente al cambiar archivos
-CMD ["nodemon", "--legacy-watch", "server.js"]
+
+# =========================================================
+# START
+# =========================================================
+
+CMD ["node", "server.js"]

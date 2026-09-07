@@ -1,329 +1,833 @@
-const { connectDB } = require('../config/db');
-const sql = require('mssql');
-const { enviarWhatsApp } = require('./enviarTurnoPorWhatsapp');
+const { pool } = require('../config/db');
 
-// Función para asignar turno
-exports.asignarTurno = async (req, res) => {
+const {
+  enviarWhatsApp
+} = require('./enviarTurnoPorWhatsapp');
+
+
+// =====================================================
+// HELPER
+// =====================================================
+
+const ejecutarProcedure = async (
+  client,
+  nombreProcedure,
+  parametros = []
+) => {
+
+  const cursor =
+    `cur_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+
+  const placeholders = parametros
+    .map((_, index) => `$${index + 1}`)
+    .join(', ');
+
+  const sql = placeholders
+    ? `CALL "${nombreProcedure}"(${placeholders}, '${cursor}')`
+    : `CALL "${nombreProcedure}"('${cursor}')`;
+
+  await client.query(sql, parametros);
+
+  const result = await client.query(
+    `FETCH ALL FROM "${cursor}"`
+  );
+
+  return result.rows;
+};
+
+
+// =====================================================
+// ASIGNAR TURNO
+// =====================================================
+
+const asignarTurno = async (req, res) => {
+
+  const {
+    id_turno,
+    id_paciente,
+    id_obra_social
+  } = req.body;
+
+  if (
+    id_turno === undefined ||
+    id_paciente === undefined ||
+    id_obra_social === undefined
+  ) {
+    return res.status(400).json({
+      error:
+        'id_turno, id_paciente e id_obra_social son obligatorios'
+    });
+  }
+
+  const client = await pool.connect();
+
   try {
-    const { id_paciente, id_turno, id_obra_social } = req.body;
 
-    if (!id_paciente || !id_turno || !id_obra_social) {
-      return res.status(400).json({ error: 'Faltan campos obligatorios' });
+    // -----------------------------------------------
+    // Verificar turno asignado
+    // -----------------------------------------------
+
+    await client.query('BEGIN');
+
+    const turnoAsignadoCheck =
+      await ejecutarProcedure(
+        client,
+        'TurnoAsignadoCheck',
+        [
+          id_turno,
+          id_paciente
+        ]
+      );
+
+    await client.query('COMMIT');
+
+    if (turnoAsignadoCheck.length > 0) {
+      return res.status(409).json({
+        error:
+          'El paciente ya tiene un turno asignado'
+      });
     }
 
-    const pool = await connectDB();
 
-    // Verificar si el turno ya fue asignado
-    const turnoAsignado = await pool.request()
-      .input('id_turno', sql.Int, id_turno)
-      .execute('TurnoAsignadoCheck');
+    // -----------------------------------------------
+    // Verificar disponibilidad
+    // -----------------------------------------------
 
-    if (turnoAsignado.recordset.length > 0) {
-      return res.status(409).json({ error: 'El turno ya está asignado' });
+    await client.query('BEGIN');
+
+    const turnoDisponible =
+      await ejecutarProcedure(
+        client,
+        'TurnoDisponibleCheck',
+        [id_turno]
+      );
+
+    await client.query('COMMIT');
+
+    if (!turnoDisponible.length) {
+      return res.status(409).json({
+        error:
+          'El turno seleccionado ya no está disponible'
+      });
     }
 
-    // Verificar si el turno está disponible
-    const turnoDisponible = await pool.request()
-      .input('id_turno', sql.Int, id_turno)
-      .execute('TurnoDisponibleCheck');
 
-    if (turnoDisponible.recordset.length === 0) {
-      return res.status(409).json({ error: 'El turno no está disponible' });
+    // -----------------------------------------------
+    // Asignar
+    // -----------------------------------------------
+
+    await client.query('BEGIN');
+
+    const resultado =
+      await ejecutarProcedure(
+        client,
+        'AsignarTurno',
+        [
+          id_turno,
+          id_paciente,
+          id_obra_social
+        ]
+      );
+
+    await client.query('COMMIT');
+
+
+    // -----------------------------------------------
+    // Obtener datos del usuario
+    // -----------------------------------------------
+
+    let usuario = [];
+
+    try {
+
+      await client.query('BEGIN');
+
+      usuario = await ejecutarProcedure(
+        client,
+        'obtenerDatosUsuario',
+        [id_paciente]
+      );
+
+      await client.query('COMMIT');
+
+    } catch (error) {
+
+      await client.query('ROLLBACK');
+
+      console.error(
+        '⚠️ No se pudieron obtener datos del usuario:',
+        error.message
+      );
     }
 
-    // Asignar turno
-    await pool.request()
-      .input('id_turno', sql.Int, id_turno)
-      .input('id_paciente', sql.Int, id_paciente)
-      .input('id_obra_social', sql.Int, id_obra_social)
-      .execute('AsignarTurno');
 
-    // Obtener datos del paciente
-    const paciente = await pool.request()
-      .input('id_paciente', sql.Int, id_paciente)
-      .execute('obtenerDatosUsuario');
-
-    const tPaciente = paciente.recordset[0];
-    if (!tPaciente) {
-      return res.status(500).json({ error: 'No se pudieron obtener los datos del paciente' });
-    }
-
+    // -----------------------------------------------
     // Obtener datos del turno
-    const datosTurno = await pool.request()
-      .input('id_turno', sql.Int, id_turno)
-      .execute('DatosDelTurno');
+    // -----------------------------------------------
 
-    const t = datosTurno.recordset[0];
+    let datosTurno = [];
 
-    // Mensaje WhatsApp
-    const mensaje = `✅ Turno confirmado!
-    📌 Paciente: ${tPaciente.nombres} ${tPaciente.apellido}
-    👨‍⚕️ Médico: ${t.medicoNombre} ${t.medicoApellido}
-    🩺 Especialidad: ${t.especialidadNombre}
-    📅 Fecha: ${t.fecha_turno}
-    ⏰ Horario: ${t.hora_inicio} - ${t.hora_fin}
-    Gracias por confiar en nuestro sanatorio.`;
+    try {
 
-    // Enviar WhatsApp
-    enviarWhatsApp(tPaciente.telefono, mensaje)
-      .catch(err => console.error('Error al enviar WhatsApp:', err));
+      await client.query('BEGIN');
 
-    return res.status(200).json({ message: '✅ Turno asignado y WhatsApp enviado' });
+      datosTurno = await ejecutarProcedure(
+        client,
+        'DatosDelTurno',
+        [id_turno]
+      );
 
-  } catch (error) {
-    console.error('❌ Error al asignar turno:', error);
-    return res.status(500).json({ error: 'Error del servidor al asignar turno' });
-  }
-};
+      await client.query('COMMIT');
 
+    } catch (error) {
 
-// Próximos turnos
-exports.getTurnos = async (req, res) => {
-  try {
-    const { id_paciente } = req.params;
+      await client.query('ROLLBACK');
 
-    // 1️⃣ Validación de parámetro
-    if (!id_paciente || isNaN(Number(id_paciente))) {
-      return res.status(400).json({ error: "Falta o es inválido el id_paciente" });
+      console.error(
+        '⚠️ No se pudieron obtener datos del turno:',
+        error.message
+      );
     }
 
-    const pool = await connectDB();
 
-    // 2️⃣ Verificamos si el paciente existe
-    const pacienteResult = await pool.request()
-      .input("id_paciente", sql.Int, Number(id_paciente))
-      .execute("ExistePaciente");
+    // -----------------------------------------------
+    // WhatsApp
+    // -----------------------------------------------
 
-    if (pacienteResult.recordset[0].count === 0) {
-      return res.status(401).json({ error: "Paciente no encontrado" });
+    try {
+
+      if (
+        usuario.length &&
+        datosTurno.length
+      ) {
+
+        await enviarWhatsApp(
+          usuario[0],
+          datosTurno[0]
+        );
+
+      }
+
+    } catch (error) {
+
+      console.error(
+        '⚠️ Error enviando WhatsApp:',
+        error.message
+      );
+
     }
 
-    // 3️⃣ Obtenemos los próximos turnos
-    const result = await pool.request()
-      .input("id_paciente", sql.Int, Number(id_paciente))
-      .execute("MisProximosTurnos");
 
-    res.status(200).json({ turnos: result.recordset || [] });
+    return res.status(201).json({
+      message:
+        'Turno asignado correctamente',
+      data: resultado
+    });
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Error al obtener los turnos" });
+
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
+
+    console.error(
+      '❌ Error asignando turno:',
+      error
+    );
+
+    return res.status(500).json({
+      error:
+        error.message ||
+        'Error al asignar turno'
+    });
+
+  } finally {
+    client.release();
   }
 };
 
 
-// Historial de turnos
-exports.historialTurnosPac = async (req, res) => {
+// =====================================================
+// MIS TURNOS
+// =====================================================
+
+const getTurnos = async (req, res) => {
+
+  const { id_paciente } = req.params;
+
+  const client = await pool.connect();
+
   try {
-    const { id_paciente } = req.params;
-    if (!id_paciente) return res.status(400).json({ error: "Falta id_paciente" });
 
-    const pool = await connectDB();
-    const result = await pool.request()
-      .input("id_paciente", sql.Int, Number(id_paciente))
-      .execute("MisTurnosHistoricos");
+    await client.query('BEGIN');
 
-    // Siempre devolvemos array, aunque esté vacío
-    res.json({ historial: result.recordset || [] });
+    const existePaciente =
+      await ejecutarProcedure(
+        client,
+        'ExistePaciente',
+        [id_paciente]
+      );
+
+    await client.query('COMMIT');
+
+    if (!existePaciente.length) {
+      return res.status(404).json({
+        error: 'Paciente no encontrado'
+      });
+    }
+
+
+    await client.query('BEGIN');
+
+    const resultado =
+      await ejecutarProcedure(
+        client,
+        'MisTurnosProximos',
+        [id_paciente]
+      );
+
+    await client.query('COMMIT');
+
+    return res.json(resultado);
+
   } catch (error) {
+
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
+
     console.error(error);
-    res.status(500).json({ error: "Error al obtener el historial de turnos" });
+
+    return res.status(500).json({
+      error:
+        'Error al obtener los turnos'
+    });
+
+  } finally {
+    client.release();
   }
 };
 
 
-exports.historialTurnosMed = async (req, res) => {
+// =====================================================
+// HISTORIAL PACIENTE
+// =====================================================
+
+const historialTurnosPac = async (req, res) => {
+
+  const { id_paciente } = req.params;
+
+  const client = await pool.connect();
+
+  try {
+
+    await client.query('BEGIN');
+
+    const resultado =
+      await ejecutarProcedure(
+        client,
+        'MisTurnosHistoricos',
+        [id_paciente]
+      );
+
+    await client.query('COMMIT');
+
+    return res.json(resultado);
+
+  } catch (error) {
+
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
+
+    console.error(error);
+
+    return res.status(500).json({
+      error:
+        'Error al obtener historial'
+    });
+
+  } finally {
+    client.release();
+  }
+};
+
+
+// =====================================================
+// HISTORIAL MÉDICO
+// =====================================================
+
+const historialTurnosMed = async (req, res) => {
+
   const { id_medico } = req.params;
 
-  const id = parseInt(id_medico, 10);
-  if (isNaN(id)) {
-    return res.status(400).json({ error: 'ID de médico inválido' });
-  }
+  const client = await pool.connect();
 
   try {
-    const pool = await connectDB();
-    const result = await pool.request()
-      .input('id_medico', sql.Int, id)
-      .execute('HistorialTurnosMedico');
 
-    console.log("Datos de la SP:", result.recordset); // <--- verifica qué devuelve
-    return res.status(200).json(result.recordset);
+    await client.query('BEGIN');
+
+    const resultado =
+      await ejecutarProcedure(
+        client,
+        'HistorialTurnosMedico',
+        [id_medico]
+      );
+
+    await client.query('COMMIT');
+
+    return res.json(resultado);
 
   } catch (error) {
-    console.error('Error en historialTurnosMed:', error);
-    return res.status(500).json({ error: 'Error al obtener el historial de turnos del médico' });
-  }
-};
 
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
 
-exports.deleteTurno = async (req, res) => {
-  const { id_paciente, id_turno_asignado } = req.body;
-
-  if (!id_paciente || !id_turno_asignado) {
-    return res.status(409).json({ error: 'Faltan datos' });
-  }
-
-  try {
-    const pool = await connectDB();
-
-    // Verificar existencia del turno asignado
-    const idTurnoCheck = await pool.request()
-      .input('id_turno_asignado', sql.Int, id_turno_asignado)
-      .execute('CheckTurnoAsignado');
-
-    if (idTurnoCheck.recordset.length === 0) {
-      return res.status(404).json({ error: 'No existe ese turno asignado' });
-    }
-
-    // Verificar existencia del paciente con ese turno
-    const idPacienteCheck = await pool.request()
-      .input('id_paciente', sql.Int, id_paciente)
-      .input('id_turno_asignado', sql.Int, id_turno_asignado)
-      .execute('IdPaciente_IdTurnoAsignado');
-
-    if (idPacienteCheck.recordset.length === 0) {
-      return res.status(404).json({ error: 'El turno no está asignado a ese paciente' });
-    }
-
-    // Ejecutar SP
-    await pool.request()
-      .input('id_paciente', sql.Int, id_paciente)
-      .input('id_turno_asignado', sql.Int, id_turno_asignado)
-      .execute('CancelarTurno');
-
-    res.status(200).json({ message: 'Turno cancelado exitosamente' });
-
-  } catch (err) {
-    console.error('Error al ejecutar el SP:', err);
-    res.status(500).json({ error: 'Error al cancelar el turno.' });
-  }
-};
-
-exports.obtenerTurnosDisponibles = async (req, res) => {
-  const id = parseInt(req.params.id_medico, 10);
-  const id_especialidad = parseInt(req.params.id_especialidad, 10);
-
-  if (isNaN(id) || isNaN(id_especialidad)) {
-    return res.status(400).json({ error: "El parámetro id_medico ni id_especialidad no son un número válido" });
-  }
-
-  if(!id){
-    return res.status(404).json({error: 'No existe tal medico en la base de datos'});
-  }
-
-  if(!id_especialidad) return res.status(404).json({error: 'No existe tal especialidad en la base de datos'});
-
-  try {
-    const pool = await connectDB();
-    const execute = await pool.request()
-      .input('id_medico', sql.Int, id)
-      .input('id_especialidad', sql.Int, id_especialidad)
-      .execute('GetTurnosDisponibles');
-
-    if (execute.recordset.length === 0) {
-      return res.status(404).json({ error: 'El médico no tiene turnos disponibles' });
-    }
-
-    return res.status(200).json(execute.recordset);
-
-  } catch (error) {
-    console.error("Error al obtener turnos disponibles:", error);
-    return res.status(500).json({ error: 'Hubo error para obtener los turnos disponibles' });
-  }
-}
-
-exports.obtenerObraSocial = async (req, res) => {
-  try {
-    const pool = await connectDB();
-    const result = await pool.request()
-      .execute("GetObrasSociales");
-
-    if (result.recordset.length === 0) {
-      return res.status(404).json({ error: "No se encontró la obra social solicitada" });
-    }
-
-    return res.status(200).json(result.recordset);
-
-  } catch (error) {
-    console.error("Error al obtener la obra social:", error);
-    return res.status(500).json({ error: "Hubo un error en el servidor al obtener la obra social" });
-  }
-};
-
-exports.insertTurnosDisp = async (req, res) => {
-  const { id_medico, id_rango, fecha_turno } = req.body;
-
-  if (!id_medico || !id_rango || !fecha_turno) {
-    return res.status(400).json({ error: 'Faltan datos obligatorios' });
-  }
-
-  try {
-    const pool = await connectDB();
-
-    const result = await pool.request()
-    .input('id_medico', sql.Int, Number(id_medico))
-    .input('id_rango', sql.Int, Number(id_rango))
-    .input('fecha_turno', sql.Date, fecha_turno) // YYYY-MM-DD string está bien
-    .execute('checkDobleTurno');
-
-    console.log(result.recordset); // para depuración
-
-    if (result.recordset.length > 0 && result.recordset[0].cantidad > 0) {
-      return res.status(409).json({ error: 'Ya existe un turno disponible para ese horario y fecha' });
-    }
-
-    // 🔹 Insertamos
-    await pool.request()
-      .input('id_medico', sql.Int, id_medico)
-      .input('id_rango', sql.Int, id_rango)
-      .input('fecha_turno', sql.Date, fecha_turno)
-      .execute('InsertTurnosDisponibles');
-
-    res.status(201).json({ success: 'Turno disponible ingresado correctamente' });
-
-  } catch (error) {
-    console.error('Error en insertTurnosDisp:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
-  }
-};
-
-
-
-exports.getRangos = async (req, res) => {
-  try {
-    const pool = await connectDB();
-    const result = await pool.request().execute('GetRangos');
-
-    return res.status(200).json(result.recordset);
-  } catch (error) {
     console.error(error);
-    return res.status(500).json({ error: 'Error al obtener los rangos' });
+
+    return res.status(500).json({
+      error:
+        'Error al obtener historial médico'
+    });
+
+  } finally {
+    client.release();
   }
 };
 
-exports.modificarTurno = async (req, res) => {
-  try {
-    const { id_turno_asignado, id_nuevo_turno, id_paciente, id_obra_social } = req.body;
 
-    if (!id_turno_asignado || !id_nuevo_turno || !id_paciente || !id_obra_social) {
-      return res.status(400).json({ error: 'Faltan datos para modificar el turno' });
+// =====================================================
+// ELIMINAR / CANCELAR TURNO
+// =====================================================
+
+const deleteTurno = async (req, res) => {
+
+  const {
+    id_turno_asignado,
+    id_paciente
+  } = req.body;
+
+  if (
+    id_turno_asignado === undefined ||
+    id_paciente === undefined
+  ) {
+    return res.status(400).json({
+      error:
+        'id_turno_asignado e id_paciente son obligatorios'
+    });
+  }
+
+  const client = await pool.connect();
+
+  try {
+
+    // -----------------------------------------------
+    // Verificar asignación
+    // -----------------------------------------------
+
+    await client.query('BEGIN');
+
+    const check =
+      await ejecutarProcedure(
+        client,
+        'CheckTurnoAsignado',
+        [id_turno_asignado]
+      );
+
+    await client.query('COMMIT');
+
+    if (!check.length) {
+      return res.status(404).json({
+        error:
+          'El turno asignado no existe'
+      });
     }
 
-    const pool = await connectDB();
 
-    // Ejecutar SP
-    await pool.request()
-      .input('id_turno_asignado', sql.Int, id_turno_asignado)
-      .input('id_nuevo_turno', sql.Int, id_nuevo_turno)
-      .input('id_paciente', sql.Int, id_paciente)
-      .input('id_obra_social', sql.Int, id_obra_social)
-      .execute('ModificarTurno');
+    // -----------------------------------------------
+    // Verificar paciente
+    // -----------------------------------------------
 
-    return res.status(200).json({ message: 'Turno modificado correctamente' });
+    await client.query('BEGIN');
+
+    const pacienteTurno =
+      await ejecutarProcedure(
+        client,
+        'IdPaciente_IdTurnoAsignado',
+        [
+          id_turno_asignado,
+          id_paciente
+        ]
+      );
+
+    await client.query('COMMIT');
+
+    if (!pacienteTurno.length) {
+      return res.status(403).json({
+        error:
+          'El turno no pertenece al paciente'
+      });
+    }
+
+
+    // -----------------------------------------------
+    // Cancelar
+    // -----------------------------------------------
+
+    await client.query('BEGIN');
+
+    const resultado =
+      await ejecutarProcedure(
+        client,
+        'CancelarTurno',
+        [id_turno_asignado]
+      );
+
+    await client.query('COMMIT');
+
+    return res.json({
+      message:
+        'Turno cancelado correctamente',
+      data: resultado
+    });
 
   } catch (error) {
-    console.error('❌ Error al modificar turno:', error);
-    return res.status(500).json({ error: 'Error del servidor al modificar turno' });
+
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
+
+    console.error(error);
+
+    return res.status(500).json({
+      error:
+        'Error al cancelar turno'
+    });
+
+  } finally {
+    client.release();
   }
 };
 
+
+// =====================================================
+// TURNOS DISPONIBLES
+// =====================================================
+
+const obtenerTurnosDisponibles = async (req, res) => {
+
+  const {
+    id_medico,
+    id_especialidad
+  } = req.params;
+
+  const client = await pool.connect();
+
+  try {
+
+    await client.query('BEGIN');
+
+    const resultado =
+      await ejecutarProcedure(
+        client,
+        'GetTurnosDisponibles',
+        [
+          id_medico,
+          id_especialidad
+        ]
+      );
+
+    await client.query('COMMIT');
+
+    return res.json(resultado);
+
+  } catch (error) {
+
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
+
+    console.error(error);
+
+    return res.status(500).json({
+      error:
+        'Error al obtener turnos disponibles'
+    });
+
+  } finally {
+    client.release();
+  }
+};
+
+
+// =====================================================
+// OBRAS SOCIALES
+// =====================================================
+
+const obtenerObraSocial = async (req, res) => {
+
+  const client = await pool.connect();
+
+  try {
+
+    await client.query('BEGIN');
+
+    const resultado =
+      await ejecutarProcedure(
+        client,
+        'getobrasociales'
+      );
+
+    await client.query('COMMIT');
+
+    return res.json(resultado);
+
+  } catch (error) {
+
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
+
+    console.error(
+      '❌ Error obteniendo obras sociales:',
+      error
+    );
+
+    return res.status(500).json({
+      error:
+        error.message ||
+        'Error al obtener obras sociales'
+    });
+
+  } finally {
+    client.release();
+  }
+};
+
+
+// =====================================================
+// INSERTAR TURNOS DISPONIBLES
+// =====================================================
+
+const insertTurnosDisp = async (req, res) => {
+
+  const {
+    id_medico,
+    id_rango,
+    fecha_turno
+  } = req.body;
+
+  if (
+    id_medico === undefined ||
+    id_rango === undefined ||
+    !fecha_turno
+  ) {
+    return res.status(400).json({
+      error:
+        'Médico, rango y fecha son obligatorios'
+    });
+  }
+
+  const client = await pool.connect();
+
+  try {
+
+    // -----------------------------------------------
+    // Verificar doble turno
+    // -----------------------------------------------
+
+    await client.query('BEGIN');
+
+    const existe =
+      await ejecutarProcedure(
+        client,
+        'checkDobleTurno',
+        [
+          id_medico,
+          id_rango,
+          fecha_turno
+        ]
+      );
+
+    await client.query('COMMIT');
+
+    if (existe.length) {
+      return res.status(409).json({
+        error:
+          'Ya existe un turno para ese médico, rango y fecha'
+      });
+    }
+
+
+    // -----------------------------------------------
+    // Insertar
+    // -----------------------------------------------
+
+    await client.query('BEGIN');
+
+    const resultado =
+      await ejecutarProcedure(
+        client,
+        'InsertTurnosDisponibles',
+        [
+          id_medico,
+          id_rango,
+          fecha_turno
+        ]
+      );
+
+    await client.query('COMMIT');
+
+    return res.status(201).json({
+      message:
+        'Turno disponible creado correctamente',
+      data: resultado
+    });
+
+  } catch (error) {
+
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
+
+    console.error(error);
+
+    return res.status(500).json({
+      error:
+        'Error al crear turno disponible'
+    });
+
+  } finally {
+    client.release();
+  }
+};
+
+
+// =====================================================
+// RANGOS
+// =====================================================
+
+const getRangos = async (req, res) => {
+
+  const client = await pool.connect();
+
+  try {
+
+    await client.query('BEGIN');
+
+    const resultado =
+      await ejecutarProcedure(
+        client,
+        'GetRangos'
+      );
+
+    await client.query('COMMIT');
+
+    return res.json(resultado);
+
+  } catch (error) {
+
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
+
+    console.error(error);
+
+    return res.status(500).json({
+      error:
+        'Error al obtener rangos'
+    });
+
+  } finally {
+    client.release();
+  }
+};
+
+
+// =====================================================
+// MODIFICAR TURNO
+// =====================================================
+
+const modificarTurno = async (req, res) => {
+
+  const {
+    id_turno_asignado,
+    id_turno,
+    id_paciente,
+    id_obra_social
+  } = req.body;
+
+  if (
+    id_turno_asignado === undefined ||
+    id_turno === undefined ||
+    id_paciente === undefined ||
+    id_obra_social === undefined
+  ) {
+    return res.status(400).json({
+      error:
+        'Faltan datos para modificar el turno'
+    });
+  }
+
+  const client = await pool.connect();
+
+  try {
+
+    await client.query('BEGIN');
+
+    const resultado =
+      await ejecutarProcedure(
+        client,
+        'modificarTurno',
+        [
+          id_turno_asignado,
+          id_turno,
+          id_paciente,
+          id_obra_social
+        ]
+      );
+
+    await client.query('COMMIT');
+
+    return res.json({
+      message:
+        'Turno modificado correctamente',
+      data: resultado
+    });
+
+  } catch (error) {
+
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
+
+    console.error(
+      '❌ Error modificando turno:',
+      error
+    );
+
+    return res.status(500).json({
+      error:
+        error.message ||
+        'Error al modificar turno'
+    });
+
+  } finally {
+    client.release();
+  }
+};
+
+
+module.exports = {
+  asignarTurno,
+  getTurnos,
+  historialTurnosPac,
+  historialTurnosMed,
+  deleteTurno,
+  obtenerTurnosDisponibles,
+  obtenerObraSocial,
+  insertTurnosDisp,
+  getRangos,
+  modificarTurno
+};
