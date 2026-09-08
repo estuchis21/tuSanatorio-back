@@ -1,13 +1,14 @@
 const express = require('express');
 
-const router = express.Router();
+const router =
+  express.Router();
 
 const turnosController =
   require('../controllers/turnosController');
 
 
 // =====================================================
-// TURNOS
+// ASIGNAR TURNO
 // =====================================================
 
 router.post(
@@ -23,9 +24,12 @@ router.post(
 router.get(
   '/misTurnos',
   (req, res) => {
+
     res.status(400).json({
-      error: 'Falta id_paciente'
+      error:
+        'Falta id_paciente'
     });
+
   }
 );
 
@@ -36,7 +40,7 @@ router.get(
 
 
 // =====================================================
-// HISTORIA DE TURNOS
+// HISTORIAL
 // =====================================================
 
 router.get(

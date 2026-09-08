@@ -10,31 +10,47 @@ const ejecutarProcedure = async (
   nombreProcedure,
   parametros = []
 ) => {
-  const cursor = `cur_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
 
-  const placeholders = parametros
-    .map((_, index) => `$${index + 1}`)
-    .join(', ');
+  const cursor =
+    `cur_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
 
-  const sql = placeholders
-    ? `CALL "${nombreProcedure}"(${placeholders}, '${cursor}')`
-    : `CALL "${nombreProcedure}"('${cursor}')`;
+  const placeholders =
+    parametros
+      .map((_, index) => `$${index + 1}`)
+      .join(', ');
 
-  await client.query(sql, parametros);
+  const sql =
+    placeholders
+      ? `CALL "${nombreProcedure}"(${placeholders}, '${cursor}')`
+      : `CALL "${nombreProcedure}"('${cursor}')`;
 
-  const result = await client.query(
-    `FETCH ALL FROM "${cursor}"`
+  console.log(
+    `🔹 ${sql}`
   );
+
+  await client.query(
+    sql,
+    parametros
+  );
+
+  const result =
+    await client.query(
+      `FETCH ALL FROM "${cursor}"`
+    );
 
   return result.rows;
 };
 
 
 // =====================================================
-// INSERTAR HISTORIA POR DNI
+// CREAR HISTORIA
 // =====================================================
 
-const insertarHistoriaPorDNI = async (req, res) => {
+const insertarHistoriaPorDNI = async (
+  req,
+  res
+) => {
+
   const {
     dni,
     id_medico,
@@ -46,63 +62,71 @@ const insertarHistoriaPorDNI = async (req, res) => {
     id_medico === undefined ||
     !historia_clinica
   ) {
+
     return res.status(400).json({
       error:
         'DNI, médico e historia clínica son obligatorios'
     });
+
   }
 
-  const client = await pool.connect();
+  const client =
+    await pool.connect();
 
   try {
 
-    // -----------------------------------------------
-    // Buscar paciente
-    // -----------------------------------------------
-
     await client.query('BEGIN');
 
-    const pacientes = await ejecutarProcedure(
-      client,
-      'sp_GetPacienteByDNI',
-      [dni]
-    );
+    const pacientes =
+      await ejecutarProcedure(
+        client,
+        'sp_GetPacienteByDNI',
+        [dni]
+      );
 
     await client.query('COMMIT');
 
-    if (!pacientes.length) {
+    if (
+      !pacientes.length
+    ) {
+
       return res.status(404).json({
-        error: 'No existe un paciente con ese DNI'
+        error:
+          'No existe un paciente con ese DNI'
       });
+
     }
 
-    const paciente = pacientes[0];
+    const paciente =
+      pacientes[0];
 
     const id_paciente =
       paciente.id_paciente;
 
-    // -----------------------------------------------
-    // Crear historia clínica
-    // -----------------------------------------------
 
     await client.query('BEGIN');
 
-    const resultado = await ejecutarProcedure(
-      client,
-      'insertarHistoriaConDetalle',
-      [
-        id_paciente,
-        id_medico,
-        historia_clinica
-      ]
-    );
+    const resultado =
+      await ejecutarProcedure(
+        client,
+        'insertarHistoriaConDetalle',
+        [
+          id_paciente,
+          id_medico,
+          historia_clinica
+        ]
+      );
 
     await client.query('COMMIT');
 
     return res.status(201).json({
+
       message:
         'Historia clínica registrada correctamente',
-      data: resultado
+
+      data:
+        resultado
+
     });
 
   } catch (error) {
@@ -117,12 +141,16 @@ const insertarHistoriaPorDNI = async (req, res) => {
     );
 
     return res.status(500).json({
-      error: 'Error al insertar historia clínica'
+      error:
+        'Error al insertar historia clínica'
     });
 
   } finally {
+
     client.release();
+
   }
+
 };
 
 
@@ -130,24 +158,34 @@ const insertarHistoriaPorDNI = async (req, res) => {
 // HISTORIAS POR DNI
 // =====================================================
 
-const getHistoriasPorDni = async (req, res) => {
-  const { dni } = req.params;
+const getHistoriasPorDni = async (
+  req,
+  res
+) => {
 
-  const client = await pool.connect();
+  const {
+    dni
+  } = req.params;
+
+  const client =
+    await pool.connect();
 
   try {
 
     await client.query('BEGIN');
 
-    const resultado = await ejecutarProcedure(
-      client,
-      'getHistoriasPorDniPaciente',
-      [dni]
-    );
+    const resultado =
+      await ejecutarProcedure(
+        client,
+        'getHistoriasPorDniPaciente',
+        [dni]
+      );
 
     await client.query('COMMIT');
 
-    return res.json(resultado);
+    return res.json(
+      resultado
+    );
 
   } catch (error) {
 
@@ -155,7 +193,10 @@ const getHistoriasPorDni = async (req, res) => {
       await client.query('ROLLBACK');
     } catch (_) {}
 
-    console.error(error);
+    console.error(
+      '❌ Error historias por DNI:',
+      error
+    );
 
     return res.status(500).json({
       error:
@@ -163,8 +204,11 @@ const getHistoriasPorDni = async (req, res) => {
     });
 
   } finally {
+
     client.release();
+
   }
+
 };
 
 
@@ -172,24 +216,34 @@ const getHistoriasPorDni = async (req, res) => {
 // HISTORIAS POR PACIENTE
 // =====================================================
 
-const getHistoriasPorPaciente = async (req, res) => {
-  const { id_paciente } = req.params;
+const getHistoriasPorPaciente = async (
+  req,
+  res
+) => {
 
-  const client = await pool.connect();
+  const {
+    id_paciente
+  } = req.params;
+
+  const client =
+    await pool.connect();
 
   try {
 
     await client.query('BEGIN');
 
-    const resultado = await ejecutarProcedure(
-      client,
-      'getHistoriasPorPaciente',
-      [id_paciente]
-    );
+    const resultado =
+      await ejecutarProcedure(
+        client,
+        'getHistoriasPorPaciente',
+        [id_paciente]
+      );
 
     await client.query('COMMIT');
 
-    return res.json(resultado);
+    return res.json(
+      resultado
+    );
 
   } catch (error) {
 
@@ -197,7 +251,10 @@ const getHistoriasPorPaciente = async (req, res) => {
       await client.query('ROLLBACK');
     } catch (_) {}
 
-    console.error(error);
+    console.error(
+      '❌ Error historias paciente:',
+      error
+    );
 
     return res.status(500).json({
       error:
@@ -205,8 +262,11 @@ const getHistoriasPorPaciente = async (req, res) => {
     });
 
   } finally {
+
     client.release();
+
   }
+
 };
 
 
@@ -214,24 +274,34 @@ const getHistoriasPorPaciente = async (req, res) => {
 // HISTORIAS POR MÉDICO
 // =====================================================
 
-const getHistoriasPorMedico = async (req, res) => {
-  const { id_medico } = req.params;
+const getHistoriasPorMedico = async (
+  req,
+  res
+) => {
 
-  const client = await pool.connect();
+  const {
+    id_medico
+  } = req.params;
+
+  const client =
+    await pool.connect();
 
   try {
 
     await client.query('BEGIN');
 
-    const resultado = await ejecutarProcedure(
-      client,
-      'getHistoriasPorMedico',
-      [id_medico]
-    );
+    const resultado =
+      await ejecutarProcedure(
+        client,
+        'getHistoriasPorMedico',
+        [id_medico]
+      );
 
     await client.query('COMMIT');
 
-    return res.json(resultado);
+    return res.json(
+      resultado
+    );
 
   } catch (error) {
 
@@ -239,7 +309,10 @@ const getHistoriasPorMedico = async (req, res) => {
       await client.query('ROLLBACK');
     } catch (_) {}
 
-    console.error(error);
+    console.error(
+      '❌ Error historias médico:',
+      error
+    );
 
     return res.status(500).json({
       error:
@@ -247,14 +320,23 @@ const getHistoriasPorMedico = async (req, res) => {
     });
 
   } finally {
+
     client.release();
+
   }
+
 };
 
 
+// =====================================================
+// EXPORTS
+// =====================================================
+
 module.exports = {
+
   insertarHistoriaPorDNI,
   getHistoriasPorDni,
   getHistoriasPorPaciente,
   getHistoriasPorMedico
+
 };

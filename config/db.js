@@ -11,16 +11,18 @@ const config = {
     ? parseInt(process.env.DB_PORT, 10)
     : 5432,
 
-  // SSL necesario para conectarse a Neon desde Render
+  // Neon requiere SSL
   ssl: {
     rejectUnauthorized: false
   },
 
+  // Pool de conexiones
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000
 };
 
+// Verificar variables necesarias
 const requiredVariables = [
   'DB_USER',
   'DB_PASSWORD',
@@ -36,6 +38,7 @@ for (const variable of requiredVariables) {
 
 const pool = new Pool(config);
 
+// Error inesperado del pool
 pool.on('error', (err) => {
   console.error(
     '❌ Error inesperado en el pool de PostgreSQL:',
@@ -43,32 +46,45 @@ pool.on('error', (err) => {
   );
 });
 
+// Probar conexión
 const connectDB = async () => {
-  try {
-    const client = await pool.connect();
+  let client;
 
-    console.log('✅ Conectado a PostgreSQL');
+  try {
+    client = await pool.connect();
+
+    console.log('====================================');
+    console.log('✅ CONECTADO A POSTGRESQL');
+    console.log('====================================');
     console.log('📊 Base de datos:', config.database);
     console.log('🖥️ Servidor:', config.host);
     console.log('🔌 Puerto:', config.port);
-
-    client.release();
+    console.log('👤 Usuario:', config.user);
+    console.log('====================================');
 
     return pool;
-  } catch (err) {
-    console.error(
-      '❌ Error de conexión a PostgreSQL:',
-      err.message
-    );
 
-    console.log('Configuración usada:', {
+  } catch (err) {
+
+    console.error('====================================');
+    console.error('❌ ERROR DE CONEXIÓN A POSTGRESQL');
+    console.error('====================================');
+    console.error(err.message);
+
+    console.error('Configuración utilizada:', {
       host: config.host,
       database: config.database,
       port: config.port,
       user: config.user
     });
 
-    process.exit(1);
+    throw err;
+
+  } finally {
+
+    if (client) {
+      client.release();
+    }
   }
 };
 
@@ -76,4 +92,3 @@ module.exports = {
   pool,
   connectDB
 };
-

@@ -15,6 +15,9 @@ const ejecutarProcedure = async (
 
   const client = await pool.connect();
 
+  const cursor =
+    `cur_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+
   try {
 
     await client.query('BEGIN');
@@ -24,20 +27,20 @@ const ejecutarProcedure = async (
       .join(', ');
 
     const argumentos = placeholders
-      ? `${placeholders}, 'cur'`
-      : `'cur'`;
+      ? `${placeholders}, '${cursor}'`
+      : `'${cursor}'`;
 
     console.log(
-      `🔹 Ejecutando procedure: ${nombreProcedure}`
+      `🔹 Ejecutando procedure con cursor: ${nombreProcedure}`
     );
 
     await client.query(
-      `CALL ${nombreProcedure}(${argumentos})`,
+      `CALL "${nombreProcedure}"(${argumentos})`,
       parametros
     );
 
     const result = await client.query(
-      'FETCH ALL FROM cur'
+      `FETCH ALL FROM "${cursor}"`
     );
 
     await client.query('COMMIT');
@@ -46,7 +49,9 @@ const ejecutarProcedure = async (
 
   } catch (error) {
 
-    await client.query('ROLLBACK');
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
 
     console.error(
       `❌ Error ejecutando ${nombreProcedure}:`,
@@ -61,6 +66,11 @@ const ejecutarProcedure = async (
 
   }
 };
+
+
+// =====================================================
+// EJECUTAR PROCEDURE SIN CURSOR
+// =====================================================
 
 const ejecutarProcedureSinCursor = async (
   nombreProcedure,
@@ -82,7 +92,7 @@ const ejecutarProcedureSinCursor = async (
     );
 
     await client.query(
-      `CALL ${nombreProcedure}(${placeholders})`,
+      `CALL "${nombreProcedure}"(${placeholders})`,
       parametros
     );
 
@@ -92,7 +102,9 @@ const ejecutarProcedureSinCursor = async (
 
   } catch (error) {
 
-    await client.query('ROLLBACK');
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
 
     console.error(
       `❌ Error ejecutando ${nombreProcedure}:`,
@@ -114,82 +126,121 @@ const ejecutarProcedureSinCursor = async (
 // =====================================================
 
 const loginUser = async (req, res) => {
+
   try {
+
     const {
       username,
       contrasena
     } = req.body;
 
     if (!username || !contrasena) {
+
       return res.status(400).json({
-        error: 'Username y contraseña son obligatorios'
+        error:
+          'Username y contraseña son obligatorios'
       });
+
     }
 
-    const usuarios = await ejecutarProcedure(
-      'getuserbyusername',
-      [username]
-    );
+    const usuarios =
+      await ejecutarProcedure(
+        'getuserbyusername',
+        [username]
+      );
 
-    if (!usuarios || usuarios.length === 0) {
+    if (
+      !usuarios ||
+      usuarios.length === 0
+    ) {
+
       return res.status(401).json({
-        error: 'Usuario o contraseña incorrectos'
+        error:
+          'Usuario o contraseña incorrectos'
       });
+
     }
 
     const usuario = usuarios[0];
 
-    const passwordCorrecta = await bcrypt.compare(
-      contrasena,
-      usuario.contrasena
-    );
+    const passwordCorrecta =
+      await bcrypt.compare(
+        contrasena,
+        usuario.contrasena
+      );
 
     if (!passwordCorrecta) {
+
       return res.status(401).json({
-        error: 'Usuario o contraseña incorrectos'
+        error:
+          'Usuario o contraseña incorrectos'
       });
+
     }
 
-    const token = jwt.sign(
-      {
-        id_usuario: usuario.id_usuario,
-        username: usuario.username,
-        id_rol: usuario.id_rol,
-        id_paciente: usuario.id_paciente || null
-      },
-      process.env.JWT_SECRET,
-      {
-        expiresIn: '8h'
-      }
-    );
+    const token =
+      jwt.sign(
+        {
+          id_usuario:
+            usuario.id_usuario,
 
-    // Nunca devolver la contraseña/hash al frontend
+          username:
+            usuario.username,
+
+          id_rol:
+            usuario.id_rol,
+
+          id_paciente:
+            usuario.id_paciente || null
+        },
+
+        process.env.JWT_SECRET,
+
+        {
+          expiresIn: '8h'
+        }
+      );
+
     const {
       contrasena: _contrasena,
       ...usuarioSeguro
     } = usuario;
 
     return res.status(200).json({
-      message: 'Login exitoso',
+
+      message:
+        'Login exitoso',
+
       token,
-      user: usuarioSeguro
+
+      user:
+        usuarioSeguro
+
     });
 
   } catch (error) {
+
     console.error(
       '❌ Error en loginUser:',
       error
     );
 
     return res.status(500).json({
-      error: 'Error interno del servidor',
+
+      error:
+        'Error interno del servidor',
+
       detail:
         process.env.NODE_ENV === 'development'
           ? error.message
           : undefined
+
     });
+
   }
+
 };
+
 
 // =====================================================
 // REGISTRO
@@ -213,9 +264,9 @@ const registerUser = async (req, res) => {
     } = req.body;
 
 
-    // =========================================================
-    // VALIDACIONES BÁSICAS
-    // =========================================================
+    // =====================================================
+    // VALIDACIONES
+    // =====================================================
 
     if (
       !DNI ||
@@ -229,32 +280,35 @@ const registerUser = async (req, res) => {
     ) {
 
       return res.status(400).json({
-        error: 'Faltan datos obligatorios'
+        error:
+          'Faltan datos obligatorios'
       });
 
     }
 
 
-    // =========================================================
-    // VALIDACIÓN DE ROL
-    // =========================================================
+    // =====================================================
+    // ROL
+    // =====================================================
 
     const rol = Number(id_rol);
 
-    if (rol !== 1 && rol !== 2) {
+    if (
+      rol !== 1 &&
+      rol !== 2
+    ) {
 
       return res.status(400).json({
-        error: 'El rol debe ser 1 (Paciente) o 2 (Médico)'
+        error:
+          'El rol debe ser 1 (Paciente) o 2 (Médico)'
       });
 
     }
 
 
-    // =========================================================
+    // =====================================================
     // ESPECIALIDAD
-    // PACIENTE  -> NULL
-    // MÉDICO    -> OBLIGATORIA
-    // =========================================================
+    // =====================================================
 
     let especialidad = null;
 
@@ -267,17 +321,22 @@ const registerUser = async (req, res) => {
       ) {
 
         return res.status(400).json({
-          error: 'Debe seleccionar una especialidad para el médico'
+          error:
+            'Debe seleccionar una especialidad para el médico'
         });
 
       }
 
-      especialidad = Number(id_especialidad);
+      especialidad =
+        Number(id_especialidad);
 
-      if (!Number.isInteger(especialidad)) {
+      if (
+        !Number.isInteger(especialidad)
+      ) {
 
         return res.status(400).json({
-          error: 'La especialidad seleccionada no es válida'
+          error:
+            'La especialidad seleccionada no es válida'
         });
 
       }
@@ -285,10 +344,9 @@ const registerUser = async (req, res) => {
     }
 
 
-    // =========================================================
+    // =====================================================
     // OBRA SOCIAL
-    // PUEDE SER NULL
-    // =========================================================
+    // =====================================================
 
     let obraSocial = null;
 
@@ -298,12 +356,16 @@ const registerUser = async (req, res) => {
       id_obra_social !== ''
     ) {
 
-      obraSocial = Number(id_obra_social);
+      obraSocial =
+        Number(id_obra_social);
 
-      if (!Number.isInteger(obraSocial)) {
+      if (
+        !Number.isInteger(obraSocial)
+      ) {
 
         return res.status(400).json({
-          error: 'La obra social seleccionada no es válida'
+          error:
+            'La obra social seleccionada no es válida'
         });
 
       }
@@ -311,21 +373,19 @@ const registerUser = async (req, res) => {
     }
 
 
-    // =========================================================
-    // VERIFICAR SI YA EXISTE
-    // EXISTENTE RECIBE:
-    // DNI + EMAIL + USERNAME + CURSOR
-    // =========================================================
+    // =====================================================
+    // VERIFICAR EXISTENCIA
+    // =====================================================
 
-    const existente = await ejecutarProcedure(
-      'EXISTENTE',
-      [
-        Number(DNI),
-        email,
-        username
-      ]
-    );
-
+    const existente =
+      await ejecutarProcedure(
+        'EXISTENTE',
+        [
+          Number(DNI),
+          email,
+          username
+        ]
+      );
 
     if (
       existente &&
@@ -333,18 +393,16 @@ const registerUser = async (req, res) => {
     ) {
 
       return res.status(409).json({
-
         error:
           'Ya existe un usuario con alguno de los datos ingresados'
-
       });
 
     }
 
 
-    // =========================================================
-    // HASH DE CONTRASEÑA
-    // =========================================================
+    // =====================================================
+    // HASH
+    // =====================================================
 
     const passwordHash =
       await bcrypt.hash(
@@ -353,24 +411,9 @@ const registerUser = async (req, res) => {
       );
 
 
-    // =========================================================
-    // INSERTAR USUARIO
-    //
-    // PostgreSQL espera exactamente:
-    //
-    // 1  DNI
-    // 2  nombres
-    // 3  apellido
-    // 4  email
-    // 5  username
-    // 6  telefono
-    // 7  contrasena
-    // 8  id_rol
-    // 9  id_especialidad
-    // 10 id_obra_social
-    //
-    // NO lleva cursor.
-    // =========================================================
+    // =====================================================
+    // INSERTAR
+    // =====================================================
 
     await ejecutarProcedureSinCursor(
       'insertarusuario',
@@ -389,16 +432,15 @@ const registerUser = async (req, res) => {
     );
 
 
-    // =========================================================
-    // OBTENER EL USUARIO RECIÉN CREADO
-    // =========================================================
+    // =====================================================
+    // RECUPERAR USUARIO
+    // =====================================================
 
     const usuarios =
       await ejecutarProcedure(
         'getuserbyusername',
         [username]
       );
-
 
     if (
       !usuarios ||
@@ -412,32 +454,51 @@ const registerUser = async (req, res) => {
 
     }
 
+    const usuario =
+      usuarios[0];
 
-    const usuario = usuarios[0];
 
-
-    // =========================================================
+    // =====================================================
     // RESPUESTA
-    // =========================================================
+    // =====================================================
 
     return res.status(201).json({
 
-      message: 'Usuario registrado correctamente',
+      message:
+        'Usuario registrado correctamente',
 
       user: {
-        id_usuario: usuario.id_usuario,
-        nombres: usuario.nombres,
-        apellido: usuario.apellido,
-        DNI: usuario.dni,
-        email: usuario.email,
-        username: usuario.username,
-        telefono: usuario.telefono,
-        id_rol: usuario.id_rol,
-        id_paciente: usuario.id_paciente || null
+
+        id_usuario:
+          usuario.id_usuario,
+
+        nombres:
+          usuario.nombres,
+
+        apellido:
+          usuario.apellido,
+
+        DNI:
+          usuario.dni,
+
+        email:
+          usuario.email,
+
+        username:
+          usuario.username,
+
+        telefono:
+          usuario.telefono,
+
+        id_rol:
+          usuario.id_rol,
+
+        id_paciente:
+          usuario.id_paciente || null
+
       }
 
     });
-
 
   } catch (error) {
 
@@ -446,22 +507,16 @@ const registerUser = async (req, res) => {
       error
     );
 
-
-    // =========================================================
-    // ERRORES DE CONSTRAINT DE POSTGRESQL
-    // =========================================================
-
-    if (error.code === '23505') {
+    if (
+      error.code === '23505'
+    ) {
 
       return res.status(409).json({
-
         error:
           'Ya existe un usuario con alguno de los datos ingresados'
-
       });
 
     }
-
 
     return res.status(500).json({
 
@@ -479,11 +534,15 @@ const registerUser = async (req, res) => {
 
 };
 
+
 // =====================================================
-// OBTENER ESPECIALIDADES
+// ESPECIALIDADES
 // =====================================================
 
-const getEspecialidades = async (req, res) => {
+const getEspecialidades = async (
+  req,
+  res
+) => {
 
   try {
 
@@ -491,7 +550,6 @@ const getEspecialidades = async (req, res) => {
       await ejecutarProcedure(
         'getEspecialidades'
       );
-
 
     return res.status(200).json(
       result
@@ -505,10 +563,8 @@ const getEspecialidades = async (req, res) => {
     );
 
     return res.status(500).json({
-
       error:
         'Error al obtener especialidades'
-
     });
 
   }
@@ -517,7 +573,7 @@ const getEspecialidades = async (req, res) => {
 
 
 // =====================================================
-// OBTENER PACIENTE POR USUARIO
+// PACIENTE POR USUARIO
 // =====================================================
 
 const getPacienteByUsuarioId = async (
@@ -531,7 +587,6 @@ const getPacienteByUsuarioId = async (
       id_usuario
     } = req.params;
 
-
     const result =
       await ejecutarProcedure(
         'verPacientePorIdUsuario',
@@ -539,7 +594,6 @@ const getPacienteByUsuarioId = async (
           Number(id_usuario)
         ]
       );
-
 
     return res.status(200).json(
       result
@@ -553,10 +607,8 @@ const getPacienteByUsuarioId = async (
     );
 
     return res.status(500).json({
-
       error:
         'Error al obtener paciente'
-
     });
 
   }
@@ -565,7 +617,7 @@ const getPacienteByUsuarioId = async (
 
 
 // =====================================================
-// OBTENER MÉDICO POR USUARIO
+// MÉDICO POR USUARIO
 // =====================================================
 
 const getMedicoByUsuarioId = async (
@@ -579,7 +631,6 @@ const getMedicoByUsuarioId = async (
       id_usuario
     } = req.params;
 
-
     const result =
       await ejecutarProcedure(
         'verMedicoPorIdUsuario',
@@ -587,7 +638,6 @@ const getMedicoByUsuarioId = async (
           Number(id_usuario)
         ]
       );
-
 
     return res.status(200).json(
       result
@@ -601,10 +651,8 @@ const getMedicoByUsuarioId = async (
     );
 
     return res.status(500).json({
-
       error:
         'Error al obtener médico'
-
     });
 
   }
@@ -627,7 +675,6 @@ const getEspecialidadesPorMedico = async (
       id_medico
     } = req.params;
 
-
     const result =
       await ejecutarProcedure(
         'getEspecialidadesPorMédico',
@@ -635,7 +682,6 @@ const getEspecialidadesPorMedico = async (
           Number(id_medico)
         ]
       );
-
 
     return res.status(200).json(
       result
@@ -649,10 +695,8 @@ const getEspecialidadesPorMedico = async (
     );
 
     return res.status(500).json({
-
       error:
         'Error al obtener especialidades del médico'
-
     });
 
   }
@@ -675,7 +719,6 @@ const getMedicosPorEspecialidad = async (
       id_especialidad
     } = req.params;
 
-
     const result =
       await ejecutarProcedure(
         'MedicosPorEspecialidad',
@@ -683,7 +726,6 @@ const getMedicosPorEspecialidad = async (
           Number(id_especialidad)
         ]
       );
-
 
     return res.status(200).json(
       result
@@ -697,10 +739,8 @@ const getMedicosPorEspecialidad = async (
     );
 
     return res.status(500).json({
-
       error:
         'Error al obtener médicos por especialidad'
-
     });
 
   }
@@ -709,7 +749,7 @@ const getMedicosPorEspecialidad = async (
 
 
 // =====================================================
-// HORARIOS POR MÉDICO
+// HORARIOS
 // =====================================================
 
 const getHorariosPorMedico = async (
@@ -723,7 +763,6 @@ const getHorariosPorMedico = async (
       id_medico
     } = req.params;
 
-
     const result =
       await ejecutarProcedure(
         'horariosPorMedico',
@@ -731,7 +770,6 @@ const getHorariosPorMedico = async (
           Number(id_medico)
         ]
       );
-
 
     return res.status(200).json(
       result
@@ -745,10 +783,8 @@ const getHorariosPorMedico = async (
     );
 
     return res.status(500).json({
-
       error:
         'Error al obtener horarios del médico'
-
     });
 
   }
@@ -757,7 +793,7 @@ const getHorariosPorMedico = async (
 
 
 // =====================================================
-// OBTENER USUARIO POR ID
+// USUARIO POR ID
 // =====================================================
 
 const getUsuarioById = async (
@@ -771,7 +807,6 @@ const getUsuarioById = async (
       id_usuario
     } = req.params;
 
-
     const result =
       await ejecutarProcedure(
         'sp_GetUsuarioById',
@@ -779,7 +814,6 @@ const getUsuarioById = async (
           Number(id_usuario)
         ]
       );
-
 
     return res.status(200).json(
       result
@@ -793,10 +827,8 @@ const getUsuarioById = async (
     );
 
     return res.status(500).json({
-
       error:
         'Error al obtener usuario'
-
     });
 
   }
@@ -819,7 +851,6 @@ const getObrasPorMedico = async (
       id_medico
     } = req.params;
 
-
     const result =
       await ejecutarProcedure(
         'GetObrasSocialesPorMedico',
@@ -827,7 +858,6 @@ const getObrasPorMedico = async (
           Number(id_medico)
         ]
       );
-
 
     return res.status(200).json(
       result
@@ -841,10 +871,8 @@ const getObrasPorMedico = async (
     );
 
     return res.status(500).json({
-
       error:
         'Error al obtener obras sociales del médico'
-
     });
 
   }
@@ -867,7 +895,6 @@ const getObrasPorPaciente = async (
       id_paciente
     } = req.params;
 
-
     const result =
       await ejecutarProcedure(
         'GetObrasSocialesPorPaciente',
@@ -875,7 +902,6 @@ const getObrasPorPaciente = async (
           Number(id_paciente)
         ]
       );
-
 
     return res.status(200).json(
       result
@@ -889,10 +915,8 @@ const getObrasPorPaciente = async (
     );
 
     return res.status(500).json({
-
       error:
         'Error al obtener obras sociales del paciente'
-
     });
 
   }
@@ -915,7 +939,6 @@ const actualizarPerfil = async (
       id_usuario
     } = req.params;
 
-
     const {
       nombres,
       apellido,
@@ -924,7 +947,6 @@ const actualizarPerfil = async (
       username,
       telefono
     } = req.body;
-
 
     const result =
       await ejecutarProcedure(
@@ -939,7 +961,6 @@ const actualizarPerfil = async (
           telefono || null
         ]
       );
-
 
     return res.status(200).json({
 
@@ -958,24 +979,20 @@ const actualizarPerfil = async (
       error
     );
 
-
-    if (error.code === '23505') {
+    if (
+      error.code === '23505'
+    ) {
 
       return res.status(409).json({
-
         error:
           'Uno de los datos ingresados ya está registrado'
-
       });
 
     }
 
-
     return res.status(500).json({
-
       error:
         'Error al actualizar perfil'
-
     });
 
   }
@@ -983,9 +1000,8 @@ const actualizarPerfil = async (
 };
 
 
-
 // =====================================================
-// BUSCAR PACIENTES POR TEXTO
+// BUSCAR PACIENTES
 // =====================================================
 
 const buscarPacientesPorTexto = async (
@@ -999,27 +1015,20 @@ const buscarPacientesPorTexto = async (
       texto
     } = req.query;
 
-
     if (!texto) {
 
       return res.status(400).json({
-
         error:
           'Debe ingresar un texto para buscar'
-
       });
 
     }
 
-
     const result =
       await ejecutarProcedure(
         'BuscarPacientePorTexto',
-        [
-          texto
-        ]
+        [texto]
       );
-
 
     return res.status(200).json(
       result
@@ -1033,10 +1042,8 @@ const buscarPacientesPorTexto = async (
     );
 
     return res.status(500).json({
-
       error:
         'Error al buscar pacientes'
-
     });
 
   }
@@ -1051,29 +1058,17 @@ const buscarPacientesPorTexto = async (
 module.exports = {
 
   loginUser,
-
   registerUser,
-
   getEspecialidades,
-
   getPacienteByUsuarioId,
-
   getMedicoByUsuarioId,
-
   getEspecialidadesPorMedico,
-
   getMedicosPorEspecialidad,
-
   getHorariosPorMedico,
-
   getUsuarioById,
-
   getObrasPorMedico,
-
   getObrasPorPaciente,
-
   actualizarPerfil,
-
   buscarPacientesPorTexto
 
 };

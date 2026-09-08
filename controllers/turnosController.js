@@ -6,7 +6,7 @@ const {
 
 
 // =====================================================
-// HELPER
+// HELPER - PROCEDURES CON REFCURSOR
 // =====================================================
 
 const ejecutarProcedure = async (
@@ -18,21 +18,62 @@ const ejecutarProcedure = async (
   const cursor =
     `cur_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
 
-  const placeholders = parametros
-    .map((_, index) => `$${index + 1}`)
-    .join(', ');
+  const placeholders =
+    parametros
+      .map((_, index) => `$${index + 1}`)
+      .join(', ');
 
-  const sql = placeholders
-    ? `CALL "${nombreProcedure}"(${placeholders}, '${cursor}')`
-    : `CALL "${nombreProcedure}"('${cursor}')`;
+  const sql =
+    placeholders
+      ? `CALL "${nombreProcedure}"(${placeholders}, '${cursor}')`
+      : `CALL "${nombreProcedure}"('${cursor}')`;
 
-  await client.query(sql, parametros);
-
-  const result = await client.query(
-    `FETCH ALL FROM "${cursor}"`
+  console.log(
+    `🔹 ${sql}`
   );
 
+  await client.query(
+    sql,
+    parametros
+  );
+
+  const result =
+    await client.query(
+      `FETCH ALL FROM "${cursor}"`
+    );
+
   return result.rows;
+};
+
+
+// =====================================================
+// HELPER - PROCEDURES SIN CURSOR
+// =====================================================
+
+const ejecutarProcedureSinCursor = async (
+  client,
+  nombreProcedure,
+  parametros = []
+) => {
+
+  const placeholders =
+    parametros
+      .map((_, index) => `$${index + 1}`)
+      .join(', ');
+
+  const sql =
+    `CALL "${nombreProcedure}"(${placeholders})`;
+
+  console.log(
+    `🔹 ${sql}`
+  );
+
+  await client.query(
+    sql,
+    parametros
+  );
+
+  return true;
 };
 
 
@@ -40,7 +81,10 @@ const ejecutarProcedure = async (
 // ASIGNAR TURNO
 // =====================================================
 
-const asignarTurno = async (req, res) => {
+const asignarTurno = async (
+  req,
+  res
+) => {
 
   const {
     id_turno,
@@ -53,19 +97,22 @@ const asignarTurno = async (req, res) => {
     id_paciente === undefined ||
     id_obra_social === undefined
   ) {
+
     return res.status(400).json({
       error:
         'id_turno, id_paciente e id_obra_social son obligatorios'
     });
+
   }
 
-  const client = await pool.connect();
+  const client =
+    await pool.connect();
 
   try {
 
-    // -----------------------------------------------
-    // Verificar turno asignado
-    // -----------------------------------------------
+    // -------------------------------------------------
+    // VERIFICAR ASIGNACIÓN
+    // -------------------------------------------------
 
     await client.query('BEGIN');
 
@@ -81,17 +128,21 @@ const asignarTurno = async (req, res) => {
 
     await client.query('COMMIT');
 
-    if (turnoAsignadoCheck.length > 0) {
+    if (
+      turnoAsignadoCheck.length > 0
+    ) {
+
       return res.status(409).json({
         error:
           'El paciente ya tiene un turno asignado'
       });
+
     }
 
 
-    // -----------------------------------------------
-    // Verificar disponibilidad
-    // -----------------------------------------------
+    // -------------------------------------------------
+    // VERIFICAR DISPONIBILIDAD
+    // -------------------------------------------------
 
     await client.query('BEGIN');
 
@@ -104,17 +155,21 @@ const asignarTurno = async (req, res) => {
 
     await client.query('COMMIT');
 
-    if (!turnoDisponible.length) {
+    if (
+      !turnoDisponible.length
+    ) {
+
       return res.status(409).json({
         error:
           'El turno seleccionado ya no está disponible'
       });
+
     }
 
 
-    // -----------------------------------------------
-    // Asignar
-    // -----------------------------------------------
+    // -------------------------------------------------
+    // ASIGNAR
+    // -------------------------------------------------
 
     await client.query('BEGIN');
 
@@ -132,9 +187,9 @@ const asignarTurno = async (req, res) => {
     await client.query('COMMIT');
 
 
-    // -----------------------------------------------
-    // Obtener datos del usuario
-    // -----------------------------------------------
+    // -------------------------------------------------
+    // DATOS USUARIO
+    // -------------------------------------------------
 
     let usuario = [];
 
@@ -142,28 +197,32 @@ const asignarTurno = async (req, res) => {
 
       await client.query('BEGIN');
 
-      usuario = await ejecutarProcedure(
-        client,
-        'obtenerDatosUsuario',
-        [id_paciente]
-      );
+      usuario =
+        await ejecutarProcedure(
+          client,
+          'obtenerDatosUsuario',
+          [id_paciente]
+        );
 
       await client.query('COMMIT');
 
     } catch (error) {
 
-      await client.query('ROLLBACK');
+      try {
+        await client.query('ROLLBACK');
+      } catch (_) {}
 
       console.error(
         '⚠️ No se pudieron obtener datos del usuario:',
         error.message
       );
+
     }
 
 
-    // -----------------------------------------------
-    // Obtener datos del turno
-    // -----------------------------------------------
+    // -------------------------------------------------
+    // DATOS TURNO
+    // -------------------------------------------------
 
     let datosTurno = [];
 
@@ -171,28 +230,32 @@ const asignarTurno = async (req, res) => {
 
       await client.query('BEGIN');
 
-      datosTurno = await ejecutarProcedure(
-        client,
-        'DatosDelTurno',
-        [id_turno]
-      );
+      datosTurno =
+        await ejecutarProcedure(
+          client,
+          'DatosDelTurno',
+          [id_turno]
+        );
 
       await client.query('COMMIT');
 
     } catch (error) {
 
-      await client.query('ROLLBACK');
+      try {
+        await client.query('ROLLBACK');
+      } catch (_) {}
 
       console.error(
         '⚠️ No se pudieron obtener datos del turno:',
         error.message
       );
+
     }
 
 
-    // -----------------------------------------------
-    // WhatsApp
-    // -----------------------------------------------
+    // -------------------------------------------------
+    // WHATSAPP
+    // -------------------------------------------------
 
     try {
 
@@ -219,9 +282,13 @@ const asignarTurno = async (req, res) => {
 
 
     return res.status(201).json({
+
       message:
         'Turno asignado correctamente',
-      data: resultado
+
+      data:
+        resultado
+
     });
 
   } catch (error) {
@@ -236,14 +303,19 @@ const asignarTurno = async (req, res) => {
     );
 
     return res.status(500).json({
+
       error:
         error.message ||
         'Error al asignar turno'
+
     });
 
   } finally {
+
     client.release();
+
   }
+
 };
 
 
@@ -251,11 +323,17 @@ const asignarTurno = async (req, res) => {
 // MIS TURNOS
 // =====================================================
 
-const getTurnos = async (req, res) => {
+const getTurnos = async (
+  req,
+  res
+) => {
 
-  const { id_paciente } = req.params;
+  const {
+    id_paciente
+  } = req.params;
 
-  const client = await pool.connect();
+  const client =
+    await pool.connect();
 
   try {
 
@@ -270,12 +348,16 @@ const getTurnos = async (req, res) => {
 
     await client.query('COMMIT');
 
-    if (!existePaciente.length) {
-      return res.status(404).json({
-        error: 'Paciente no encontrado'
-      });
-    }
+    if (
+      !existePaciente.length
+    ) {
 
+      return res.status(404).json({
+        error:
+          'Paciente no encontrado'
+      });
+
+    }
 
     await client.query('BEGIN');
 
@@ -288,7 +370,9 @@ const getTurnos = async (req, res) => {
 
     await client.query('COMMIT');
 
-    return res.json(resultado);
+    return res.json(
+      resultado
+    );
 
   } catch (error) {
 
@@ -296,7 +380,10 @@ const getTurnos = async (req, res) => {
       await client.query('ROLLBACK');
     } catch (_) {}
 
-    console.error(error);
+    console.error(
+      '❌ Error getTurnos:',
+      error
+    );
 
     return res.status(500).json({
       error:
@@ -304,8 +391,11 @@ const getTurnos = async (req, res) => {
     });
 
   } finally {
+
     client.release();
+
   }
+
 };
 
 
@@ -313,11 +403,17 @@ const getTurnos = async (req, res) => {
 // HISTORIAL PACIENTE
 // =====================================================
 
-const historialTurnosPac = async (req, res) => {
+const historialTurnosPac = async (
+  req,
+  res
+) => {
 
-  const { id_paciente } = req.params;
+  const {
+    id_paciente
+  } = req.params;
 
-  const client = await pool.connect();
+  const client =
+    await pool.connect();
 
   try {
 
@@ -332,7 +428,9 @@ const historialTurnosPac = async (req, res) => {
 
     await client.query('COMMIT');
 
-    return res.json(resultado);
+    return res.json(
+      resultado
+    );
 
   } catch (error) {
 
@@ -340,7 +438,10 @@ const historialTurnosPac = async (req, res) => {
       await client.query('ROLLBACK');
     } catch (_) {}
 
-    console.error(error);
+    console.error(
+      '❌ Error historial paciente:',
+      error
+    );
 
     return res.status(500).json({
       error:
@@ -348,8 +449,11 @@ const historialTurnosPac = async (req, res) => {
     });
 
   } finally {
+
     client.release();
+
   }
+
 };
 
 
@@ -357,11 +461,17 @@ const historialTurnosPac = async (req, res) => {
 // HISTORIAL MÉDICO
 // =====================================================
 
-const historialTurnosMed = async (req, res) => {
+const historialTurnosMed = async (
+  req,
+  res
+) => {
 
-  const { id_medico } = req.params;
+  const {
+    id_medico
+  } = req.params;
 
-  const client = await pool.connect();
+  const client =
+    await pool.connect();
 
   try {
 
@@ -376,7 +486,9 @@ const historialTurnosMed = async (req, res) => {
 
     await client.query('COMMIT');
 
-    return res.json(resultado);
+    return res.json(
+      resultado
+    );
 
   } catch (error) {
 
@@ -384,7 +496,10 @@ const historialTurnosMed = async (req, res) => {
       await client.query('ROLLBACK');
     } catch (_) {}
 
-    console.error(error);
+    console.error(
+      '❌ Error historial médico:',
+      error
+    );
 
     return res.status(500).json({
       error:
@@ -392,16 +507,22 @@ const historialTurnosMed = async (req, res) => {
     });
 
   } finally {
+
     client.release();
+
   }
+
 };
 
 
 // =====================================================
-// ELIMINAR / CANCELAR TURNO
+// CANCELAR TURNO
 // =====================================================
 
-const deleteTurno = async (req, res) => {
+const deleteTurno = async (
+  req,
+  res
+) => {
 
   const {
     id_turno_asignado,
@@ -412,19 +533,18 @@ const deleteTurno = async (req, res) => {
     id_turno_asignado === undefined ||
     id_paciente === undefined
   ) {
+
     return res.status(400).json({
       error:
         'id_turno_asignado e id_paciente son obligatorios'
     });
+
   }
 
-  const client = await pool.connect();
+  const client =
+    await pool.connect();
 
   try {
-
-    // -----------------------------------------------
-    // Verificar asignación
-    // -----------------------------------------------
 
     await client.query('BEGIN');
 
@@ -437,17 +557,17 @@ const deleteTurno = async (req, res) => {
 
     await client.query('COMMIT');
 
-    if (!check.length) {
+    if (
+      !check.length
+    ) {
+
       return res.status(404).json({
         error:
           'El turno asignado no existe'
       });
+
     }
 
-
-    // -----------------------------------------------
-    // Verificar paciente
-    // -----------------------------------------------
 
     await client.query('BEGIN');
 
@@ -463,17 +583,17 @@ const deleteTurno = async (req, res) => {
 
     await client.query('COMMIT');
 
-    if (!pacienteTurno.length) {
+    if (
+      !pacienteTurno.length
+    ) {
+
       return res.status(403).json({
         error:
           'El turno no pertenece al paciente'
       });
+
     }
 
-
-    // -----------------------------------------------
-    // Cancelar
-    // -----------------------------------------------
 
     await client.query('BEGIN');
 
@@ -487,9 +607,13 @@ const deleteTurno = async (req, res) => {
     await client.query('COMMIT');
 
     return res.json({
+
       message:
         'Turno cancelado correctamente',
-      data: resultado
+
+      data:
+        resultado
+
     });
 
   } catch (error) {
@@ -498,7 +622,10 @@ const deleteTurno = async (req, res) => {
       await client.query('ROLLBACK');
     } catch (_) {}
 
-    console.error(error);
+    console.error(
+      '❌ Error cancelar turno:',
+      error
+    );
 
     return res.status(500).json({
       error:
@@ -506,8 +633,11 @@ const deleteTurno = async (req, res) => {
     });
 
   } finally {
+
     client.release();
+
   }
+
 };
 
 
@@ -515,14 +645,18 @@ const deleteTurno = async (req, res) => {
 // TURNOS DISPONIBLES
 // =====================================================
 
-const obtenerTurnosDisponibles = async (req, res) => {
+const obtenerTurnosDisponibles = async (
+  req,
+  res
+) => {
 
   const {
     id_medico,
     id_especialidad
   } = req.params;
 
-  const client = await pool.connect();
+  const client =
+    await pool.connect();
 
   try {
 
@@ -540,7 +674,9 @@ const obtenerTurnosDisponibles = async (req, res) => {
 
     await client.query('COMMIT');
 
-    return res.json(resultado);
+    return res.json(
+      resultado
+    );
 
   } catch (error) {
 
@@ -548,7 +684,10 @@ const obtenerTurnosDisponibles = async (req, res) => {
       await client.query('ROLLBACK');
     } catch (_) {}
 
-    console.error(error);
+    console.error(
+      '❌ Error turnos disponibles:',
+      error
+    );
 
     return res.status(500).json({
       error:
@@ -556,8 +695,11 @@ const obtenerTurnosDisponibles = async (req, res) => {
     });
 
   } finally {
+
     client.release();
+
   }
+
 };
 
 
@@ -565,23 +707,47 @@ const obtenerTurnosDisponibles = async (req, res) => {
 // OBRAS SOCIALES
 // =====================================================
 
-const obtenerObraSocial = async (req, res) => {
+const obtenerObraSocial = async (
+  req,
+  res
+) => {
 
-  const client = await pool.connect();
+  const client =
+    await pool.connect();
 
   try {
 
     await client.query('BEGIN');
 
+    console.log(
+      '🔹 Ejecutando getobrasociales()'
+    );
+
+    /*
+      IMPORTANTE:
+
+      Este procedure NO utiliza cursor.
+
+      Por eso NO usamos ejecutarProcedure().
+    */
+
     const resultado =
-      await ejecutarProcedure(
-        client,
-        'getobrasociales'
+      await client.query(
+        'CALL "getobrasociales"()'
       );
 
     await client.query('COMMIT');
 
-    return res.json(resultado);
+    /*
+      Si el procedure tiene OUT/INOUT,
+      PostgreSQL puede devolver filas.
+
+      Si no devuelve filas, rows será [].
+    */
+
+    return res.json(
+      resultado.rows
+    );
 
   } catch (error) {
 
@@ -595,14 +761,24 @@ const obtenerObraSocial = async (req, res) => {
     );
 
     return res.status(500).json({
+
       error:
         error.message ||
-        'Error al obtener obras sociales'
+        'Error al obtener obras sociales',
+
+      detail:
+        process.env.NODE_ENV === 'development'
+          ? error.detail
+          : undefined
+
     });
 
   } finally {
+
     client.release();
+
   }
+
 };
 
 
@@ -610,7 +786,10 @@ const obtenerObraSocial = async (req, res) => {
 // INSERTAR TURNOS DISPONIBLES
 // =====================================================
 
-const insertTurnosDisp = async (req, res) => {
+const insertTurnosDisp = async (
+  req,
+  res
+) => {
 
   const {
     id_medico,
@@ -623,19 +802,18 @@ const insertTurnosDisp = async (req, res) => {
     id_rango === undefined ||
     !fecha_turno
   ) {
+
     return res.status(400).json({
       error:
         'Médico, rango y fecha son obligatorios'
     });
+
   }
 
-  const client = await pool.connect();
+  const client =
+    await pool.connect();
 
   try {
-
-    // -----------------------------------------------
-    // Verificar doble turno
-    // -----------------------------------------------
 
     await client.query('BEGIN');
 
@@ -652,17 +830,17 @@ const insertTurnosDisp = async (req, res) => {
 
     await client.query('COMMIT');
 
-    if (existe.length) {
+    if (
+      existe.length
+    ) {
+
       return res.status(409).json({
         error:
           'Ya existe un turno para ese médico, rango y fecha'
       });
+
     }
 
-
-    // -----------------------------------------------
-    // Insertar
-    // -----------------------------------------------
 
     await client.query('BEGIN');
 
@@ -680,9 +858,13 @@ const insertTurnosDisp = async (req, res) => {
     await client.query('COMMIT');
 
     return res.status(201).json({
+
       message:
         'Turno disponible creado correctamente',
-      data: resultado
+
+      data:
+        resultado
+
     });
 
   } catch (error) {
@@ -691,7 +873,10 @@ const insertTurnosDisp = async (req, res) => {
       await client.query('ROLLBACK');
     } catch (_) {}
 
-    console.error(error);
+    console.error(
+      '❌ Error insertando turno:',
+      error
+    );
 
     return res.status(500).json({
       error:
@@ -699,8 +884,11 @@ const insertTurnosDisp = async (req, res) => {
     });
 
   } finally {
+
     client.release();
+
   }
+
 };
 
 
@@ -708,9 +896,13 @@ const insertTurnosDisp = async (req, res) => {
 // RANGOS
 // =====================================================
 
-const getRangos = async (req, res) => {
+const getRangos = async (
+  req,
+  res
+) => {
 
-  const client = await pool.connect();
+  const client =
+    await pool.connect();
 
   try {
 
@@ -724,7 +916,9 @@ const getRangos = async (req, res) => {
 
     await client.query('COMMIT');
 
-    return res.json(resultado);
+    return res.json(
+      resultado
+    );
 
   } catch (error) {
 
@@ -732,7 +926,10 @@ const getRangos = async (req, res) => {
       await client.query('ROLLBACK');
     } catch (_) {}
 
-    console.error(error);
+    console.error(
+      '❌ Error rangos:',
+      error
+    );
 
     return res.status(500).json({
       error:
@@ -740,8 +937,11 @@ const getRangos = async (req, res) => {
     });
 
   } finally {
+
     client.release();
+
   }
+
 };
 
 
@@ -749,7 +949,10 @@ const getRangos = async (req, res) => {
 // MODIFICAR TURNO
 // =====================================================
 
-const modificarTurno = async (req, res) => {
+const modificarTurno = async (
+  req,
+  res
+) => {
 
   const {
     id_turno_asignado,
@@ -764,13 +967,16 @@ const modificarTurno = async (req, res) => {
     id_paciente === undefined ||
     id_obra_social === undefined
   ) {
+
     return res.status(400).json({
       error:
         'Faltan datos para modificar el turno'
     });
+
   }
 
-  const client = await pool.connect();
+  const client =
+    await pool.connect();
 
   try {
 
@@ -791,9 +997,13 @@ const modificarTurno = async (req, res) => {
     await client.query('COMMIT');
 
     return res.json({
+
       message:
         'Turno modificado correctamente',
-      data: resultado
+
+      data:
+        resultado
+
     });
 
   } catch (error) {
@@ -808,18 +1018,28 @@ const modificarTurno = async (req, res) => {
     );
 
     return res.status(500).json({
+
       error:
         error.message ||
         'Error al modificar turno'
+
     });
 
   } finally {
+
     client.release();
+
   }
+
 };
 
 
+// =====================================================
+// EXPORTS
+// =====================================================
+
 module.exports = {
+
   asignarTurno,
   getTurnos,
   historialTurnosPac,
@@ -830,4 +1050,5 @@ module.exports = {
   insertTurnosDisp,
   getRangos,
   modificarTurno
+
 };

@@ -1,12 +1,15 @@
 const express = require('express');
 
-const router = express.Router();
+const router =
+  express.Router();
 
 const historiasClinicasController =
   require('../controllers/histClinicasController');
 
 
-// Crear historia clínica
+// =====================================================
+// CREAR HISTORIA
+// =====================================================
 
 router.post(
   '/crearHistoria',
@@ -14,7 +17,9 @@ router.post(
 );
 
 
-// Historias por paciente
+// =====================================================
+// HISTORIAS POR PACIENTE
+// =====================================================
 
 router.get(
   '/paciente/:id_paciente',
@@ -22,7 +27,9 @@ router.get(
 );
 
 
-// Historias por médico
+// =====================================================
+// HISTORIAS POR MÉDICO
+// =====================================================
 
 router.get(
   '/medico/:id_medico',
@@ -30,7 +37,9 @@ router.get(
 );
 
 
-// Historias por DNI
+// =====================================================
+// HISTORIAS POR DNI
+// =====================================================
 
 router.get(
   '/hisClinicas/:dni',
