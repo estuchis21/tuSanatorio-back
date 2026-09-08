@@ -23,8 +23,14 @@ const app = express();
 // =====================================================
 
 app.use(
-  cors()
+  cors({
+    origin: 'https://tu-sanatorio-front.vercel.app',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    credentials: true
+  })
 );
+
+app.options('*', cors());
 
 app.use(
   express.json()
