@@ -26,66 +26,29 @@ const app =
 // =====================================================
 
 const allowedOrigins = [
-
+  'https://front-brown-three.vercel.app',
   'https://tu-sanatorio-front.vercel.app',
-
   'http://localhost:3000',
-
   'http://localhost:5173'
-
 ];
 
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin) {
+      return callback(null, true);
+    }
 
-app.use(
-  cors({
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
 
-    origin: function (
-      origin,
-      callback
-    ) {
-
-      // Permitir requests sin origin
-      // (Postman, curl, etc.)
-      if (!origin) {
-        return callback(null, true);
-      }
-
-      if (
-        allowedOrigins.includes(origin)
-      ) {
-
-        return callback(
-          null,
-          true
-        );
-
-      }
-
-      return callback(
-        new Error(
-          'Origen no permitido por CORS'
-        )
-      );
-
-    },
-
-    methods: [
-      'GET',
-      'POST',
-      'PUT',
-      'DELETE',
-      'OPTIONS'
-    ],
-
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization'
-    ],
-
-    credentials: true
-
-  })
-);
+    console.log('❌ Origen bloqueado por CORS:', origin);
+    return callback(new Error('Origen no permitido por CORS'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
 
 
 // =====================================================
